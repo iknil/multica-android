@@ -1,6 +1,7 @@
 package ai.multica.android.feature
 
 import ai.multica.android.core.auth.InMemorySessionStore
+import ai.multica.android.core.auth.SessionStore
 import ai.multica.android.core.network.FixtureScenario
 import ai.multica.android.core.network.GatewayException
 import ai.multica.android.core.network.LocalFixtureGateway
@@ -14,6 +15,7 @@ import ai.multica.android.model.Workspace
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -97,6 +99,53 @@ class AppControllerTest {
         request.join()
 
         assertTrue(controller.state.value is AppState.Login)
+    }
+
+    @Test
+    fun logoutWinsWhenVerifiedLoginWriteAlreadyOwnsSessionLock() = runBlocking {
+        val store = BlockingWriteSessionStore()
+        val controller = AppController(LocalFixtureGateway(delayMillis = 0), store)
+        controller.start()
+        controller.sendCode(LocalFixtureGateway.FIXTURE_EMAIL)
+
+        val verification = launch { controller.verifyCode(LocalFixtureGateway.FIXTURE_CODE) }
+        store.writeStarted.await()
+        val logout = launch { controller.logout() }
+        yield() // logout invalidates the generation before waiting for the session lock.
+        assertTrue(controller.state.value is AppState.Login)
+
+        store.releaseWrite.complete(Unit)
+        verification.join()
+        logout.join()
+
+        assertNull(store.readToken())
+        assertEquals(1, store.writeCount)
+        assertTrue(store.clearCount >= 1)
+    }
+
+    @Test
+    fun unauthorizedClearWinsWhenSessionLockPrecedesStaleLoginWrite() = runBlocking {
+        val gateway = FirstVerificationBlocksThenExpiresGateway()
+        val store = BlockingClearSessionStore()
+        val controller = AppController(gateway, store)
+        controller.start()
+        controller.sendCode(LocalFixtureGateway.FIXTURE_EMAIL)
+
+        val staleVerification = launch { controller.verifyCode(LocalFixtureGateway.FIXTURE_CODE) }
+        gateway.firstVerificationStarted.await()
+        val expiringVerification = launch { controller.verifyCode(LocalFixtureGateway.FIXTURE_CODE) }
+        store.clearStarted.await() // second login reached a 401 and owns the session lock while clearing.
+        gateway.releaseFirstVerification.complete(Unit)
+        yield() // stale login is queued behind the clear and must re-check generation.
+
+        store.releaseClear.complete(Unit)
+        expiringVerification.join()
+        staleVerification.join()
+
+        assertTrue(controller.state.value is AppState.Login)
+        assertNull(store.readToken())
+        assertEquals(1, store.writeCount) // only the active login wrote before its 401; stale login did not.
+        assertEquals(1, store.clearCount)
     }
 
     @Test
@@ -276,6 +325,70 @@ class AppControllerTest {
         return controller
     }
 
+
+    private class BlockingWriteSessionStore : SessionStore {
+        val writeStarted = CompletableDeferred<Unit>()
+        val releaseWrite = CompletableDeferred<Unit>()
+        var writeCount = 0
+        var clearCount = 0
+        private var token: String? = null
+
+        override suspend fun readToken(): String? = token
+
+        override suspend fun writeToken(token: String) {
+            writeCount += 1
+            writeStarted.complete(Unit)
+            releaseWrite.await()
+            this.token = token
+        }
+
+        override suspend fun clearToken() {
+            clearCount += 1
+            token = null
+        }
+    }
+
+    private class BlockingClearSessionStore : SessionStore {
+        val clearStarted = CompletableDeferred<Unit>()
+        val releaseClear = CompletableDeferred<Unit>()
+        var writeCount = 0
+        var clearCount = 0
+        private var token: String? = null
+
+        override suspend fun readToken(): String? = token
+
+        override suspend fun writeToken(token: String) {
+            writeCount += 1
+            this.token = token
+        }
+
+        override suspend fun clearToken() {
+            clearCount += 1
+            clearStarted.complete(Unit)
+            releaseClear.await()
+            token = null
+        }
+    }
+
+    private class FirstVerificationBlocksThenExpiresGateway(
+        private val delegate: LocalFixtureGateway = LocalFixtureGateway(delayMillis = 0),
+    ) : MulticaGateway by delegate {
+        val firstVerificationStarted = CompletableDeferred<Unit>()
+        val releaseFirstVerification = CompletableDeferred<Unit>()
+        private var verificationCount = 0
+
+        override suspend fun verifyCode(email: String, code: String): AuthenticatedSession {
+            verificationCount += 1
+            if (verificationCount == 1) {
+                firstVerificationStarted.complete(Unit)
+                releaseFirstVerification.await()
+            }
+            return delegate.verifyCode(email, code)
+        }
+
+        override suspend fun getWorkspaces(token: String): List<Workspace> =
+            throw GatewayException(GatewayException.Kind.UNAUTHORIZED, "Session expired")
+    }
 
     private class BlockingIssuesGateway(
         private val delegate: LocalFixtureGateway = LocalFixtureGateway(delayMillis = 0),

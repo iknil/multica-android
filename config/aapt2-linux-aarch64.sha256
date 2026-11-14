@@ -1,2 +1,4 @@
-# Verified locally on 2026-11-14; repository does not redistribute this SDK tool.
+# Acquisition contract: Android SDK Manager package build-tools;37.0.0.
+# Re-fetch with: sdkmanager --sdk_root="$ANDROID_HOME" "build-tools;37.0.0"
+# The retrieved aapt2 is trusted only when this approved digest matches; it is not redistributed here.
 de8cb1c025a3901af488e5f2487868b9e3a5d108699949a687fdbd0ac9e2a65b  aapt2

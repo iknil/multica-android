@@ -12,6 +12,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AppController(
     private val gateway: MulticaGateway,
@@ -19,6 +21,7 @@ class AppController(
 ) {
     private val mutableState = MutableStateFlow<AppState>(AppState.RestoringSession)
     private val generation = AtomicLong(0)
+    private val sessionMutationMutex = Mutex()
     val state: StateFlow<AppState> = mutableState.asStateFlow()
 
     suspend fun start() {
@@ -74,9 +77,18 @@ class AppController(
         mutableState.value = current.copy(loading = true, error = null)
         try {
             val session = gateway.verifyCode(current.email, code.trim())
-            if (!isActive(request)) return
-            sessionStore.writeToken(session.token)
-            if (!isActive(request)) return
+            val committed = sessionMutationMutex.withLock {
+                if (!isActive(request)) return@withLock false
+                sessionStore.writeToken(session.token)
+                if (!isActive(request)) {
+                    // A logout/401 may invalidate this request while secure storage is suspending.
+                    // Compensate while still serialized so a stale token cannot survive the clear.
+                    runCatching { sessionStore.clearToken() }
+                    return@withLock false
+                }
+                true
+            }
+            if (!committed || !isActive(request)) return
             loadWorkspaces(session.token, session.user)
         } catch (error: Throwable) {
             ifActive(request) { mutableState.value = current.copy(loading = false, error = error.userMessage()) }
@@ -177,7 +189,7 @@ class AppController(
     suspend fun logout() {
         beginRequest() // Invalidate before the serialized secure-store clear suspends.
         mutableState.value = loginState()
-        runCatching { sessionStore.clearToken() }
+        clearSessionToken()
     }
 
     private suspend fun restore(token: String) {
@@ -285,7 +297,13 @@ class AppController(
         if (!isActive(request)) return
         generation.incrementAndGet()
         mutableState.value = loginState(notice = "Your session expired. Sign in again.")
-        runCatching { sessionStore.clearToken() }
+        clearSessionToken()
+    }
+
+    private suspend fun clearSessionToken() {
+        sessionMutationMutex.withLock {
+            runCatching { sessionStore.clearToken() }
+        }
     }
 
     private fun loginState(error: String? = null, notice: String? = null): AppState.Login =

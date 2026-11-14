@@ -23,14 +23,10 @@ GRADLE_ARGS=(--no-daemon --no-build-cache --console=plain)
 if [[ "$HOST_OS" == "Linux" && ( "$HOST_ARCH" == "aarch64" || "$HOST_ARCH" == "arm64" ) ]]; then
   AAPT2="${MULTICA_AAPT2_PATH:-}"
   if [[ -z "$AAPT2" ]]; then
-    while IFS= read -r candidate; do
-      if "$candidate" version >/dev/null 2>&1; then
-        AAPT2="$candidate"
-        break
-      fi
-    done < <(find "$ANDROID_SDK/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt2 -perm -u+x 2>/dev/null | sort -Vr)
+    mapfile -t AAPT2_CANDIDATES < <(find "$ANDROID_SDK/build-tools" -mindepth 2 -maxdepth 2 -type f -name aapt2 -perm -u+x 2>/dev/null | sort -Vr)
+    AAPT2="${AAPT2_CANDIDATES[0]:-}"
   fi
-  if [[ -z "$AAPT2" || ! -x "$AAPT2" ]] || ! "$AAPT2" version >/dev/null 2>&1; then
+  if [[ -z "$AAPT2" || ! -x "$AAPT2" ]]; then
     cat >&2 <<MSG
 Linux aarch64 requires a host-native AAPT2 binary.
 Install one under ANDROID_HOME/build-tools or set MULTICA_AAPT2_PATH to its executable path.
@@ -38,12 +34,7 @@ MSG
     exit 2
   fi
   EXPECTED_AAPT2_SHA256="${MULTICA_AAPT2_SHA256:-$(awk '!/^#/ && NF { print $1; exit }' "$ROOT/config/aapt2-linux-aarch64.sha256")}"
-  ACTUAL_AAPT2_SHA256="$(sha256sum "$AAPT2" | awk '{ print $1 }')"
-  if [[ "$ACTUAL_AAPT2_SHA256" != "$EXPECTED_AAPT2_SHA256" ]]; then
-    echo "AAPT2 checksum mismatch: expected $EXPECTED_AAPT2_SHA256, got $ACTUAL_AAPT2_SHA256." >&2
-    echo "Do not run an unreviewed host tool; provision the pinned binary or explicitly supply an approved MULTICA_AAPT2_SHA256." >&2
-    exit 2
-  fi
+  ACTUAL_AAPT2_SHA256="$("$ROOT/scripts/verify-aapt2.sh" "$AAPT2" "$EXPECTED_AAPT2_SHA256")"
   GRADLE_ARGS+=("-Pandroid.aapt2FromMavenOverride=$AAPT2")
 fi
 

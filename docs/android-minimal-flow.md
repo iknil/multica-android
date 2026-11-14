@@ -65,6 +65,6 @@ JVM 用普通 AES key 验证 round-trip、篡改失败及同一明文两次写�
 ANDROID_HOME="$HOME/Android/Sdk" ./scripts/verify-build.sh
 ```
 
-该入口固定要求 JDK 17，默认使用仓库内、已忽略的 `.gradle-verification` 作为隔离 Gradle 用户目录，并执行 `clean testDebugUnitTest assembleDebug assembleDebugAndroidTest lintDebug`，因此不会依赖 `~/.gradle/gradle.properties`。Linux x86-64 使用 AGP/Maven 的 AAPT2；Linux aarch64 必须在 SDK build-tools 中存在实际可执行的 aarch64 AAPT2，或通过 `MULTICA_AAPT2_PATH` 指定，脚本会先运行 `aapt2 version` 并核对仓库 `config/aapt2-linux-aarch64.sha256` 的已验证散列，再传 `android.aapt2FromMavenOverride`；该 SDK 工具不随仓库分发。本轮不声明 macOS、Windows 或其他架构已验证。
+该入口固定要求 JDK 17，默认使用仓库内、已忽略的 `.gradle-verification` 作为隔离 Gradle 用户目录，并执行 `clean testDebugUnitTest assembleDebug assembleDebugAndroidTest lintDebug`，因此不会依赖 `~/.gradle/gradle.properties`。Linux x86-64 使用 AGP/Maven 的 AAPT2；Linux aarch64 必须在 SDK build-tools 中存在实际可执行的 aarch64 AAPT2，或通过 `MULTICA_AAPT2_PATH` 指定，脚本会先对候选文件计算 SHA-256 并与仓库 `config/aapt2-linux-aarch64.sha256` 的批准值比较；不匹配时不会执行候选文件，匹配后才运行 `aapt2 version` 并传入 `android.aapt2FromMavenOverride`。可复取来源固定为 SDK Manager 包 `build-tools;37.0.0`（`sdkmanager --sdk_root="$ANDROID_HOME" "build-tools;37.0.0"`），取回后仍必须通过批准散列；该 SDK 工具不随仓库分发。本轮不声明 macOS、Windows 或其他架构已验证。
 
 骨架/切片验收只覆盖编译、JVM 状态机与合同测试、lint 和 debug APK 签名完整性。产品验收还需由 QA 在可用 AVD/设备上完成安装启动、浅深色、软键盘、TalkBack/字体缩放、触控目标、AndroidKeyStore 行为、进程恢复和 38 项矩阵，并在获授权账号上验证真实 OTP、HTTP/401/弱网。两者不可互相替代。
