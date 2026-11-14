@@ -1,97 +1,409 @@
 package ai.multica.android
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import ai.multica.android.ui.theme.MulticaTheme
+import ai.multica.android.core.network.FixtureScenario
+import ai.multica.android.core.network.LocalFixtureGateway
+import ai.multica.android.feature.AppController
+import ai.multica.android.feature.AppState
+import ai.multica.android.model.IssueSummary
+import ai.multica.android.model.Workspace
+import kotlinx.coroutines.launch
 
 @Composable
-fun MulticaApp() {
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+fun MulticaApp(controller: AppController, fixtureMode: Boolean) {
+    val state by controller.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    Scaffold(
+        topBar = { AppHeader(fixtureMode) },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when (val current = state) {
+                AppState.RestoringSession -> FullPageLoading("Restoring secure session")
+                is AppState.Login -> LoginScreen(
+                    state = current,
+                    fixtureMode = fixtureMode,
+                    onScenario = controller::selectFixtureScenario,
+                    onSendCode = { scope.launch { controller.sendCode(it) } },
+                    onVerify = { scope.launch { controller.verifyCode(it) } },
+                )
+                is AppState.RestoreFailure -> RestoreFailureScreen(
+                    current,
+                    onRetry = { scope.launch { controller.retryRestore() } },
+                    onLogout = { scope.launch { controller.logout() } },
+                )
+                is AppState.WorkspaceSelection -> WorkspaceScreen(
+                    current,
+                    onWorkspace = { scope.launch { controller.selectWorkspace(it) } },
+                    onRetry = { scope.launch { controller.retryWorkspaces() } },
+                    onLogout = { scope.launch { controller.logout() } },
+                )
+                is AppState.IssueList -> IssueListScreen(
+                    current,
+                    onRetry = { scope.launch { controller.retryIssues() } },
+                    onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
+                    onLogout = { scope.launch { controller.logout() } },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppHeader(fixtureMode: Boolean) {
+    Surface(shadowElevation = 2.dp) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
-                Text("Multica", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(28.dp))
-                Text(
-                    "Native Android feasibility",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    "A compiled Kotlin and Compose boundary for service integration.",
-                    modifier = Modifier.padding(top = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-            HorizontalDivider()
-            ContractRow("Build route", "Kotlin + Compose", StatusColor.Ready)
-            ContractRow("HTTP identity", "mobile / android", StatusColor.Ready)
-            ContractRow("Realtime", "auth-first / foreground", StatusColor.Ready)
-            ContractRow("Environment URL", "Awaiting verified value", StatusColor.Pending)
-            ContractRow("Signing identity", "Awaiting release owner", StatusColor.Pending)
+            Text("Multica", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Text(
-                    "No production request is sent by this feasibility build.",
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+            if (fixtureMode) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(20.dp),
+                ) {
+                    Text(
+                        "LOCAL FIXTURE",
+                        Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
             }
         }
     }
 }
 
-private enum class StatusColor { Ready, Pending }
-
 @Composable
-private fun ContractRow(label: String, value: String, status: StatusColor) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+private fun LoginScreen(
+    state: AppState.Login,
+    fixtureMode: Boolean,
+    onScenario: (FixtureScenario) -> Unit,
+    onSendCode: (String) -> Unit,
+    onVerify: (String) -> Unit,
+) {
+    var email by rememberSaveable(state.email) {
+        mutableStateOf(state.email.ifBlank { if (fixtureMode) LocalFixtureGateway.FIXTURE_EMAIL else "" })
+    }
+    var code by rememberSaveable(state.codeSent) { mutableStateOf("") }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .background(
-                    if (status == StatusColor.Ready) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.secondary,
-                    CircleShape,
-                ),
-        )
-        Column(Modifier.weight(1f)) {
-            Text(label, fontWeight = FontWeight.Medium)
-            Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item {
+            Text("Sign in", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (fixtureMode) "Safe local flow — no OTP or service request is sent."
+                else "Use an authorized Multica test account.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        if (fixtureMode) {
+            item {
+                Text("Fixture scenario", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FixtureScenario.entries.forEach { scenario ->
+                        FilterChip(
+                            selected = state.fixtureScenario == scenario,
+                            onClick = { onScenario(scenario) },
+                            label = { Text(scenario.label) },
+                            enabled = !state.loading,
+                        )
+                    }
+                }
+                Text(
+                    state.fixtureScenario.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        item {
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Email") },
+                singleLine = true,
+                enabled = !state.loading && !state.codeSent,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            )
+        }
+        if (state.codeSent) {
+            item {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("One-time code") },
+                    supportingText = if (fixtureMode) ({ Text("Local fixture code: ${LocalFixtureGateway.FIXTURE_CODE}") }) else null,
+                    singleLine = true,
+                    enabled = !state.loading,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                )
+            }
+        }
+        state.notice?.let { message -> item { MessagePanel(message, isError = false) } }
+        state.error?.let { message -> item { MessagePanel(message, isError = true) } }
+        item {
+            Button(
+                onClick = { if (state.codeSent) onVerify(code) else onSendCode(email) },
+                enabled = !state.loading && email.isNotBlank() && (!state.codeSent || code.isNotBlank()),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                if (state.loading) {
+                    CircularProgressIndicator(
+                        Modifier.height(22.dp).semantics { contentDescription = "Loading" },
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(if (state.codeSent) "Verify and continue" else "Continue with email")
+            }
         }
     }
 }
 
-@Preview(showBackground = true)
 @Composable
-private fun AppPreview() = MulticaTheme { MulticaApp() }
+private fun RestoreFailureScreen(
+    state: AppState.RestoreFailure,
+    onRetry: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    CenteredColumn {
+        Text("Could not restore session", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            state.message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+        )
+        Button(onClick = onRetry, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+            Text("Retry")
+        }
+        TextButton(onClick = onLogout, enabled = !state.loading) { Text("Clear session and sign in") }
+    }
+}
+
+@Composable
+private fun WorkspaceScreen(
+    state: AppState.WorkspaceSelection,
+    onWorkspace: (Workspace) -> Unit,
+    onRetry: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    when {
+        state.loading -> FullPageLoading("Loading workspaces")
+        state.error != null -> ErrorState("Workspaces unavailable", state.error, onRetry, onLogout)
+        state.workspaces.isEmpty() -> EmptyState(
+            title = "No workspaces yet",
+            detail = "This account does not have access to a workspace.",
+            action = "Refresh",
+            onAction = onRetry,
+            secondaryAction = "Sign out",
+            onSecondary = onLogout,
+        )
+        else -> LazyColumn(
+            contentPadding = PaddingValues(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Text("Choose a workspace", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "Signed in as ${state.user.name.ifBlank { state.user.email }}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                )
+            }
+            items(state.workspaces, key = Workspace::id) { workspace ->
+                Card(
+                    onClick = { onWorkspace(workspace) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Text(workspace.name, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            workspace.slug,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            item { TextButton(onClick = onLogout) { Text("Sign out") } }
+        }
+    }
+}
+
+@Composable
+private fun IssueListScreen(
+    state: AppState.IssueList,
+    onRetry: () -> Unit,
+    onChangeWorkspace: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    when {
+        state.loading -> FullPageLoading("Loading tasks")
+        state.error != null -> ErrorState("Tasks unavailable", state.error, onRetry, onChangeWorkspace)
+        state.issues.isEmpty() -> EmptyState(
+            title = "No tasks in ${state.workspace.name}",
+            detail = "There are no tasks in this fixture result.",
+            action = "Refresh",
+            onAction = onRetry,
+            secondaryAction = "Change workspace",
+            onSecondary = onChangeWorkspace,
+        )
+        else -> LazyColumn(
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            item {
+                Column(Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
+                    Text(state.workspace.name, style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "${state.issues.size} tasks",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(Modifier.padding(top = 4.dp)) {
+                        TextButton(onClick = onChangeWorkspace) { Text("Change workspace") }
+                        TextButton(onClick = onLogout) { Text("Sign out") }
+                    }
+                }
+                HorizontalDivider()
+            }
+            items(state.issues, key = IssueSummary::id) { issue -> IssueRow(issue) }
+        }
+    }
+}
+
+@Composable
+private fun IssueRow(issue: IssueSummary) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(issue.identifier, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.weight(1f))
+            Text(issue.status.replace('_', ' '), style = MaterialTheme.typography.labelMedium)
+        }
+        Text(issue.title, modifier = Modifier.padding(top = 6.dp), style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Priority: ${issue.priority}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+    HorizontalDivider(Modifier.padding(horizontal = 24.dp))
+}
+
+@Composable
+private fun ErrorState(
+    title: String,
+    detail: String,
+    onRetry: () -> Unit,
+    onSecondary: () -> Unit,
+) {
+    EmptyState(title, detail, "Retry", onRetry, "Back", onSecondary)
+}
+
+@Composable
+private fun EmptyState(
+    title: String,
+    detail: String,
+    action: String,
+    onAction: () -> Unit,
+    secondaryAction: String,
+    onSecondary: () -> Unit,
+) {
+    CenteredColumn {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(
+            detail,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+        )
+        Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) { Text(action) }
+        OutlinedButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth()) { Text(secondaryAction) }
+    }
+}
+
+@Composable
+private fun FullPageLoading(label: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(Modifier.semantics { contentDescription = label })
+            Text(label, modifier = Modifier.padding(top = 14.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MessagePanel(message: String, isError: Boolean) {
+    Surface(
+        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(message, Modifier.fillMaxWidth().padding(14.dp))
+    }
+}
+
+@Composable
+private fun CenteredColumn(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        content = content,
+    )
+}

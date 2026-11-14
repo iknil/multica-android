@@ -8,25 +8,30 @@
 
 本仓库已建立最小原生 Android 工程。应用层、主题、HTTP/实时合同和 JVM 合同测试均为 Kotlin；UI 使用 Jetpack Compose / Material 3。Web、iOS 和既有 React Native 源码只作为业务行为与线上协议参考，不复制 TypeScript runtime，也不依赖私有 `@multica/core`。
 
-骨架刻意不发送线上请求：`API_BASE_URL` 是不可路由的 `https://api.example.invalid`，尚未选择 HTTP/WS 客户端、数据库或依赖注入框架。这样可以验证编译工具链和协议边界，同时避免把“可编译”误报为“已经联调”。
+当前 debug 默认进入确定性的本地 fixture，不发送线上请求；`API_BASE_URL` 默认仍是不可路由的 `https://api.example.invalid`。本轮已实现登录→工作区→任务列表的最小纵向流程，并提供基于 `HttpURLConnection` 的首批 HTTP 合同适配器，但只有在显式关闭 fixture 且注入获授权环境 URL 后才会启用。WebSocket、数据库和依赖注入框架仍未引入，不能把本地流程通过误报为真实服务联调通过。
 
 ## 2. 工程与模块边界
 
 ```text
 app
-├── MainActivity / MulticaApp       Compose 单 Activity 入口与可行性状态页
+├── MainActivity / MulticaApp       Compose 单 Activity 与登录→工作区→任务列表
 ├── ui/theme                        按用途区分的浅/深色 Material token
+├── feature/AppController           单向状态机；加载/空态/重试/401
+├── model                           User、Workspace、IssueSummary
 └── core
     ├── config/AppConfig            环境 URL 与版本的启动约束
+    ├── auth                        AndroidKeyStore AES-GCM session store
     └── network
         ├── ApiContract             HTTP 路由、header、30 s 超时合同
+        ├── HttpMulticaGateway      OTP、me、workspaces、issues HTTP 适配
+        ├── LocalFixtureGateway     默认离线确定性夹具与故障场景
         └── RealtimeContract        /ws URL、auth 首帧、心跳/退避常量
 ```
 
 后续按 feature + data/domain/ui 垂直切片扩展，而不是建立巨型 `screens`/`utils`：
 
-- `core/network`：选定的 HTTP/WebSocket transport、统一错误和 request id；
-- `core/auth`：Android Keystore 支持的加密 token 存储、会话更新和 401 清理；
+- `core/network`：首批 HTTP 已使用平台 `HttpURLConnection`，后续补 WebSocket transport、refresh 去重和更完整的 protocol telemetry；
+- `core/auth`：AndroidKeyStore 非导出 AES-256/GCM key + 私有 SharedPreferences 密文；写入/清理以 Mutex 串行，401 清理、非 401 保留已落地；后续补 token refresh 条件提交与设备级密钥失效实测；
 - `core/database`：若 D1 获批才引入加密持久化与迁移；
 - `feature/auth`、`workspace`、`inbox`、`issue`、`run`：各自状态与 Compose UI；
 - `navigation`：Navigation Compose、自适应 list/detail 与 Android Back；
@@ -51,7 +56,7 @@ app
 | 首批读取 | `GET /api/me`、`GET /api/workspaces`、`GET /api/inbox` |
 | 超时与失效 | 参考移动端 30 s；401 才清理会话，网络错误/5xx 不误删 token |
 
-`ApiRoutes`、`ClientMetadata` 与 `ApiContract.headers` 已将这些不随 transport 变化的部分固化，并用 JVM 测试确保 Android 标识、Bearer 和 workspace header 不回退为 iOS。
+`ApiRoutes`、`ClientMetadata` 与 `ApiContract.headers` 已将这些不随 transport 变化的部分固化，并用 JVM 测试确保 Android 标识、Bearer 和 workspace header 不回退为 iOS。`HttpMulticaGateway` 当前实现 OTP、`/api/me`、workspaces 和 issues；真实 OTP/环境尚未获授权执行。
 
 ### 3.2 WebSocket
 
@@ -90,7 +95,7 @@ app
 | Android identity | 临时 `ai.multica.android`，debug 后缀 `.debug` | 最终 applicationId、version policy | 发布所有者 | 从 Play/组织命名登记取得并写入 variant |
 | 服务环境 | 路由与 header 合同已核实 | dev/staging HTTPS API URL、证书链 | 后端/环境所有者 | 通过受控配置注入，真机执行 `/api/me` 探针 |
 | 测试身份 | OTP 流程已核实 | 测试邮箱、workspace slug、角色矩阵 | QA + workspace owner | 建立最小权限测试账号，不在仓库记录凭据 |
-| 安全存储 | 必须 Keystore 支持的加密存储 | 具体库、失效/迁移策略 | Android + 安全 owner | threat review 后实现登出/401/密钥失效测试 |
+| 安全存储 | AndroidKeyStore AES-256/GCM 非导出 key；密文/IV 存私有 prefs；备份已禁用 | threat review、硬件支持与密钥失效真机证据、后续迁移策略 | Android + 安全 owner | 已有 JVM cipher 防篡改测试；在 API 26/目标设备执行进程重启、清数据、升级和失效测试 |
 | 实时 | `/ws`、auth-first、android query 已核实 | staging WS 可达性与事件夹具 | 后端 owner | 前台连接、断网、重连、token 轮换联调 |
 | 分享 | 现状为 HTTPS Web URL | A/B；若 A，host/path、assetlinks 与签名 SHA-256 | 产品 + 域名/发布 owner | `adb shell am start`、App Links assistant、未安装 Web 降级 |
 | 发布 | debug APK 可构建 | release keystore、Play track、隐私材料 | 发布 owner | G3 受控注入；私钥不得进入 issue 或仓库 |
@@ -113,12 +118,12 @@ app
 
 ## 7. 验证边界与后续项
 
-本轮应以 `clean testDebugUnitTest assembleDebug lintDebug` 的真实输出为构建证据；JVM 测试覆盖配置约束、HTTP identity、WS URL 与 auth frame。它不等于 38 项产品验收，也没有模拟器/真机、键盘、TalkBack、菜单、App Links、真实 OTP/HTTP/WS 证据。
+本轮以 `clean testDebugUnitTest assembleDebug lintDebug` 的真实输出为构建证据；JVM 测试新增本地登录、错误 OTP、工作区/任务、空态、一次失败重试、会话恢复、401 清理、非 401 保留与 AES-GCM 防篡改。它不等于 38 项产品验收；当前机器没有可用 AVD/设备，因此没有安装启动、键盘、TalkBack、浅深色设备截图、菜单、App Links 或真实 OTP/HTTP/WS 证据。
 
 下一阶段顺序：
 
 1. CI clean checkout 复现骨架，冻结 applicationId/variants/environment；
-2. 选择 transport/加密存储并用 staging 完成 OTP→workspace→`/api/me`→WS auth_ack 探针；
+2. 取得获授权 staging 配置后完成真实 OTP→workspace→issues 与 `/api/me` 探针，再补 WS auth_ack；
 3. 以同一 38 项矩阵重新映射原生证据，先实现默认 P0；
 4. 在 Pixel + 第二 OEM 执行浅/深色、键盘、bottom sheet/anchored menu、Back、字体缩放与弱网；
 5. A 获批才加入 App Links 并执行已安装/未安装/未授权/错误路径回归；

@@ -4,6 +4,11 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val configuredApiBaseUrl = providers.gradleProperty("multica.apiBaseUrl")
+    .orElse("https://api.example.invalid")
+val configuredFixtureMode = providers.gradleProperty("multica.fixtureMode")
+    .orElse("true")
+
 android {
     namespace = "ai.multica.android"
     compileSdk = 35
@@ -15,7 +20,8 @@ android {
         versionCode = 1
         versionName = "0.1.0-feasibility"
 
-        buildConfigField("String", "API_BASE_URL", "\"https://api.example.invalid\"")
+        buildConfigField("String", "API_BASE_URL", "\"${configuredApiBaseUrl.get()}\"")
+        buildConfigField("boolean", "FIXTURE_MODE", configuredFixtureMode.get())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

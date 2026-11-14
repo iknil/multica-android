@@ -1,11 +1,17 @@
 # Multica Android
 
-Native Android feasibility skeleton built with Kotlin and Jetpack Compose.
-It freezes the verified HTTP and WebSocket client identity at the code boundary,
-but intentionally does not call a production service until environment and
-release configuration are supplied.
+Native Android implementation built with Kotlin and Jetpack Compose. The current
+vertical slice covers sign-in, workspace selection, and a task list, including
+loading, empty, retry, and expired-session states.
 
-## Build
+## Safe default
+
+Debug builds use a deterministic local fixture by default and never contact a
+service. Use `demo@multica.local` with code `123456`, then select one of the
+fixture scenarios shown in the app. The generated APK is not a connected or
+release-ready build.
+
+## Build and verify
 
 Requirements: JDK 17 and Android SDK 35.
 
@@ -13,6 +19,7 @@ Requirements: JDK 17 and Android SDK 35.
 ANDROID_HOME="$HOME/Android/Sdk" ./gradlew --no-daemon clean testDebugUnitTest assembleDebug lintDebug
 ```
 
-The default `API_BASE_URL` is the non-routable `https://api.example.invalid`.
-Do not treat the generated debug APK as a connected or release-ready app.
-See `docs/android-native-architecture.md` for contracts, gaps, and estimates.
+See `docs/android-minimal-flow.md` for authorized environment injection,
+AndroidKeyStore session design, fixture behavior, and the exact validation
+boundary. `docs/android-native-architecture.md` records the wider contracts,
+gaps, decisions, and native estimate.

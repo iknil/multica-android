@@ -6,6 +6,7 @@ object ApiRoutes {
     const val REFRESH_SESSION = "/api/auth/refresh"
     const val ME = "/api/me"
     const val WORKSPACES = "/api/workspaces"
+    const val ISSUES = "/api/issues"
     const val INBOX = "/api/inbox"
 }
 
