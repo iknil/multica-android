@@ -60,6 +60,19 @@ class LocalFixtureGatewayTest {
     }
 
     @Test
+    fun freshRetryLoginRearmsOneShotFailures() = runBlocking {
+        val gateway = LocalFixtureGateway(FixtureScenario.FAIL_ONCE, 0)
+        repeat(2) {
+            val token = gateway.verifyCode(LocalFixtureGateway.FIXTURE_EMAIL, LocalFixtureGateway.FIXTURE_CODE).token
+            val first = assertThrows(GatewayException::class.java) {
+                runBlocking { gateway.getIssues(token, "fixture") }
+            }
+            assertEquals(GatewayException.Kind.NETWORK, first.kind)
+            assertEquals(3, gateway.getIssues(token, "fixture").size)
+        }
+    }
+
+    @Test
     fun rejectsIncorrectFixtureCode() {
         val error = assertThrows(GatewayException::class.java) {
             runBlocking { LocalFixtureGateway(delayMillis = 0).verifyCode("demo@multica.local", "000000") }

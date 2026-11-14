@@ -84,6 +84,38 @@ class AppControllerTest {
     }
 
     @Test
+    fun logoutFencesLateIssueListResponse() = runBlocking {
+        val gateway = BlockingIssuesGateway()
+        val controller = AppController(gateway, InMemorySessionStore())
+        signIn(controller)
+        val workspace = (controller.state.value as AppState.WorkspaceSelection).workspaces.first()
+        val request = launch { controller.selectWorkspace(workspace) }
+        gateway.issuesStarted.await()
+
+        controller.logout()
+        gateway.releaseIssues.complete(Unit)
+        request.join()
+
+        assertTrue(controller.state.value is AppState.Login)
+    }
+
+    @Test
+    fun workspaceSwitchFencesLateIssueListResponse() = runBlocking {
+        val gateway = BlockingIssuesGateway()
+        val controller = AppController(gateway, InMemorySessionStore())
+        signIn(controller)
+        val workspace = (controller.state.value as AppState.WorkspaceSelection).workspaces.first()
+        val request = launch { controller.selectWorkspace(workspace) }
+        gateway.issuesStarted.await()
+
+        controller.chooseAnotherWorkspace()
+        gateway.releaseIssues.complete(Unit)
+        request.join()
+
+        assertTrue(controller.state.value is AppState.WorkspaceSelection)
+    }
+
+    @Test
     fun logoutFencesLateTimelineResponse() = runBlocking {
         val gateway = BlockingTimelineGateway()
         val controller = populatedController(gateway)
@@ -155,6 +187,46 @@ class AppControllerTest {
     }
 
     @Test
+    fun fixtureScenarioRemainsSelectedAfterLogout() = runBlocking {
+        val gateway = LocalFixtureGateway(delayMillis = 0)
+        val controller = AppController(gateway, InMemorySessionStore())
+        controller.start()
+        controller.selectFixtureScenario(FixtureScenario.FAIL_ONCE)
+        controller.sendCode(LocalFixtureGateway.FIXTURE_EMAIL)
+        controller.verifyCode(LocalFixtureGateway.FIXTURE_CODE)
+        controller.logout()
+
+        val login = controller.state.value as AppState.Login
+        assertEquals(FixtureScenario.FAIL_ONCE, login.fixtureScenario)
+    }
+
+    @Test
+    fun expiredScenarioRemainsSelectedAfterSessionExpiry() = runBlocking {
+        val gateway = LocalFixtureGateway(delayMillis = 0)
+        val controller = AppController(gateway, InMemorySessionStore())
+        controller.start()
+        controller.selectFixtureScenario(FixtureScenario.EXPIRED)
+        controller.sendCode(LocalFixtureGateway.FIXTURE_EMAIL)
+        controller.verifyCode(LocalFixtureGateway.FIXTURE_CODE)
+        controller.selectWorkspace((controller.state.value as AppState.WorkspaceSelection).workspaces.single())
+
+        val login = controller.state.value as AppState.Login
+        assertEquals(FixtureScenario.EXPIRED, login.fixtureScenario)
+        assertTrue(login.notice.orEmpty().contains("expired"))
+    }
+
+    @Test
+    fun connectedGatewayUsesEmailDeliveryPrompt() = runBlocking {
+        val controller = AppController(ConnectedPromptGateway, InMemorySessionStore())
+        controller.start()
+        controller.sendCode("tester@example.com")
+
+        val login = controller.state.value as AppState.Login
+        assertTrue(login.notice.orEmpty().contains("Check your email"))
+        assertTrue(!login.notice.orEmpty().contains("fixture"))
+    }
+
+    @Test
     fun restoresValidPersistedSession() = runBlocking {
         val controller = AppController(
             LocalFixtureGateway(delayMillis = 0),
@@ -204,6 +276,20 @@ class AppControllerTest {
         return controller
     }
 
+
+    private class BlockingIssuesGateway(
+        private val delegate: LocalFixtureGateway = LocalFixtureGateway(delayMillis = 0),
+    ) : MulticaGateway by delegate {
+        val issuesStarted = CompletableDeferred<Unit>()
+        val releaseIssues = CompletableDeferred<Unit>()
+
+        override suspend fun getIssues(token: String, workspaceSlug: String): List<IssueSummary> {
+            issuesStarted.complete(Unit)
+            releaseIssues.await()
+            return delegate.getIssues(token, workspaceSlug)
+        }
+    }
+
     private class BlockingTimelineGateway(
         private val delegate: LocalFixtureGateway = LocalFixtureGateway(delayMillis = 0),
     ) : MulticaGateway by delegate {
@@ -219,6 +305,23 @@ class AppControllerTest {
             releaseTimeline.await()
             return delegate.getTimeline(token, workspaceSlug, issueId)
         }
+    }
+
+
+    private object ConnectedPromptGateway : MulticaGateway {
+        override suspend fun sendCode(email: String) = Unit
+        override suspend fun verifyCode(email: String, code: String) =
+            AuthenticatedSession("token", User("id", "name", email))
+        override suspend fun getMe(token: String) = User("id", "name", "tester@example.com")
+        override suspend fun getWorkspaces(token: String): List<Workspace> = emptyList()
+        override suspend fun getIssues(token: String, workspaceSlug: String): List<IssueSummary> = emptyList()
+        override suspend fun getIssue(token: String, workspaceSlug: String, issueId: String): IssueDetail =
+            throw UnsupportedOperationException()
+        override suspend fun getTimeline(
+            token: String,
+            workspaceSlug: String,
+            issueId: String,
+        ): List<TimelineItem> = emptyList()
     }
 
     private object FailingRestoreGateway : MulticaGateway {

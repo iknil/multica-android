@@ -53,16 +53,18 @@ URL 不是密钥；token、OTP、邮箱和发布凭据不得写入 Gradle 属性
 
 ## 安全存储选择
 
-未采用已弃用的 `EncryptedSharedPreferences`。`AndroidKeystoreSessionStore` 生成 AndroidKeyStore 内不可导出的 AES-256 key，以 AES/GCM/NoPadding 加密 token，仅把随机 IV 与密文写入应用私有 SharedPreferences；manifest 同时禁用备份。所有读取、写入与清除通过 `Mutex` 串行，损坏密文、丢失/失效 key 会清除本地 envelope，而不会返回或记录 token。
+未采用已弃用的 `EncryptedSharedPreferences`。`AndroidKeystoreSessionStore` 为每次安装生成随机 AndroidKeyStore alias 及不可导出的 AES-256 key，以 AES/GCM/NoPadding 加密 token；每次写入由加密 provider 独立生成 12-byte IV（加密侧不传 caller-provided IV，解密侧才传已保存 IV），仅把 alias、IV 与密文写入应用私有且禁止备份的 SharedPreferences。登出/401 会同时删除 envelope 与对应 KeyStore entry；损坏密文、丢失/失效 key 也做同样清理，读取旧 envelope 时绝不会为缺失 key 静默新建替代 key。既有固定 alias `multica_session_aes_v1` 仅用于一次性解密迁移，成功提交随机 alias envelope 后即删除。所有操作通过 `Mutex` 串行。
 
-JVM 用普通 AES key 验证 round-trip 与篡改失败；AndroidKeyStore 是否硬件支持、进程重启、系统升级和 key invalidation 仍必须在模拟器/真机复验。
+JVM 用普通 AES key 验证 round-trip、篡改失败及同一明文两次写入的 IV/密文不同。平台入口 `./scripts/verify-keystore-device.sh` 只运行 `AndroidKeystoreSessionStoreTest`，覆盖 AndroidKeyStore token 写入、store 重建恢复、重复写入、清理与 key entry 删除；无 ready ADB 设备时明确失败而非计为通过。硬件支持、进程终止、系统升级和 key invalidation 仍需在目标真机矩阵复验。
 
 ## 验证方法与产品验收区别
 
 本地工程门禁：
 
 ```bash
-ANDROID_HOME="$HOME/Android/Sdk" ./gradlew --no-daemon clean testDebugUnitTest assembleDebug lintDebug
+ANDROID_HOME="$HOME/Android/Sdk" ./scripts/verify-build.sh
 ```
+
+该入口固定要求 JDK 17，默认使用仓库内、已忽略的 `.gradle-verification` 作为隔离 Gradle 用户目录，并执行 `clean testDebugUnitTest assembleDebug assembleDebugAndroidTest lintDebug`，因此不会依赖 `~/.gradle/gradle.properties`。Linux x86-64 使用 AGP/Maven 的 AAPT2；Linux aarch64 必须在 SDK build-tools 中存在实际可执行的 aarch64 AAPT2，或通过 `MULTICA_AAPT2_PATH` 指定，脚本会先运行 `aapt2 version` 并核对仓库 `config/aapt2-linux-aarch64.sha256` 的已验证散列，再传 `android.aapt2FromMavenOverride`；该 SDK 工具不随仓库分发。本轮不声明 macOS、Windows 或其他架构已验证。
 
 骨架/切片验收只覆盖编译、JVM 状态机与合同测试、lint 和 debug APK 签名完整性。产品验收还需由 QA 在可用 AVD/设备上完成安装启动、浅深色、软键盘、TalkBack/字体缩放、触控目标、AndroidKeyStore 行为、进程恢复和 38 项矩阵，并在获授权账号上验证真实 OTP、HTTP/401/弱网。两者不可互相替代。

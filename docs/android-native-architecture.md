@@ -31,7 +31,7 @@ app
 后续按 feature + data/domain/ui 垂直切片扩展，而不是建立巨型 `screens`/`utils`：
 
 - `core/network`：首批 HTTP 已使用平台 `HttpURLConnection`，后续补 WebSocket transport、refresh 去重和更完整的 protocol telemetry；
-- `core/auth`：AndroidKeyStore 非导出 AES-256/GCM key + 私有 SharedPreferences 密文；写入/清理以 Mutex 串行，401 清理、非 401 保留已落地；后续补 token refresh 条件提交与设备级密钥失效实测；
+- `core/auth`：每安装随机 alias 的 AndroidKeyStore 非导出 AES-256/GCM key + 私有 SharedPreferences 密文；每写入随机 IV，写入/清理以 Mutex 串行，登出/401 同时删除 envelope 与 key entry，非 401 保留已落地；固定 v1 alias 仅作一次性迁移，后续补 token refresh 条件提交与设备级密钥失效实测；
 - `core/database`：若 D1 获批才引入加密持久化与迁移；
 - `feature/auth`、`workspace`、`inbox`、`issue`、`run`：各自状态与 Compose UI；
 - `navigation`：Navigation Compose、自适应 list/detail 与 Android Back；

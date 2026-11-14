@@ -1,4 +1,5 @@
 .gradle/
+.gradle-verification/
 .idea/
 **/build/
 local.properties

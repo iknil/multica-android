@@ -30,7 +30,7 @@ class AppController(
         }
         if (!isActive(request)) return
         if (token == null) {
-            mutableState.value = AppState.Login()
+            mutableState.value = loginState()
             return
         }
         restore(token)
@@ -54,7 +54,11 @@ class AppController(
                     email = cleanEmail,
                     codeSent = true,
                     loading = false,
-                    notice = "Code ready. The local fixture does not send email.",
+                    notice = if (gateway is LocalFixtureGateway) {
+                        "Code ready. The local fixture does not send email."
+                    } else {
+                        "Code sent. Check your email and enter the one-time code."
+                    },
                 )
             }
         } catch (error: Throwable) {
@@ -86,7 +90,7 @@ class AppController(
         val token = runCatching { sessionStore.readToken() }.getOrNull()
         if (!isActive(request)) return
         if (token == null) {
-            mutableState.value = AppState.Login(error = "The saved session is unavailable. Sign in again.")
+            mutableState.value = loginState(error = "The saved session is unavailable. Sign in again.")
         } else {
             restore(token)
         }
@@ -172,7 +176,7 @@ class AppController(
 
     suspend fun logout() {
         beginRequest() // Invalidate before the serialized secure-store clear suspends.
-        mutableState.value = AppState.Login()
+        mutableState.value = loginState()
         runCatching { sessionStore.clearToken() }
     }
 
@@ -280,9 +284,16 @@ class AppController(
     private suspend fun expireSession(request: Long) {
         if (!isActive(request)) return
         generation.incrementAndGet()
-        mutableState.value = AppState.Login(notice = "Your session expired. Sign in again.")
+        mutableState.value = loginState(notice = "Your session expired. Sign in again.")
         runCatching { sessionStore.clearToken() }
     }
+
+    private fun loginState(error: String? = null, notice: String? = null): AppState.Login =
+        AppState.Login(
+            fixtureScenario = (gateway as? LocalFixtureGateway)?.scenario ?: FixtureScenario.STANDARD,
+            error = error,
+            notice = notice,
+        )
 
     private fun beginRequest(): Long = generation.incrementAndGet()
     private fun isActive(request: Long): Boolean = generation.get() == request

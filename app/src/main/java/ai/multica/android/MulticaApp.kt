@@ -313,7 +313,7 @@ private fun IssueListScreen(
         state.error != null -> ErrorState("Tasks unavailable", state.error, onRetry, onChangeWorkspace)
         state.issues.isEmpty() -> EmptyState(
             title = "No tasks in ${state.workspace.name}",
-            detail = "There are no tasks in this fixture result.",
+            detail = "There are no tasks in this workspace.",
             action = "Refresh",
             onAction = onRetry,
             secondaryAction = "Change workspace",

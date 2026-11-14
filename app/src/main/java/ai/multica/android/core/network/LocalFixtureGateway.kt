@@ -33,6 +33,10 @@ class LocalFixtureGateway(
         if (!email.contains('@')) invalid("Enter a valid email address")
         if (code != FIXTURE_CODE) invalid("Use the local fixture code $FIXTURE_CODE")
         val token = "fixture:${scenario.key}"
+        // A fixture sign-in represents a fresh session, so one-shot failures must
+        // be reproducible after logout/session expiry in the same app process.
+        failedIssueTokens.remove(token)
+        failedTimelineTokens.remove(token)
         return AuthenticatedSession(token, fixtureUser(email))
     }
 

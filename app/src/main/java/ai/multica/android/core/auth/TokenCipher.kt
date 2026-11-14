@@ -14,10 +14,14 @@ object TokenCipher {
 
     fun encrypt(token: String, key: SecretKey, random: SecureRandom = SecureRandom()): CipherEnvelope {
         require(token.isNotBlank())
-        val iv = ByteArray(IV_BYTES).also(random::nextBytes)
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
-        return CipherEnvelope(iv, cipher.doFinal(token.toByteArray(Charsets.UTF_8)))
+        // AndroidKeyStore keys keep randomizedEncryptionRequired=true. The
+        // provider must generate the encryption IV; caller-provided GCM IVs are
+        // rejected for those keys. Decryption supplies the persisted IV below.
+        cipher.init(Cipher.ENCRYPT_MODE, key, random)
+        val ciphertext = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
+        val iv = requireNotNull(cipher.iv).also { require(it.size == IV_BYTES) }
+        return CipherEnvelope(iv, ciphertext)
     }
 
     fun decrypt(envelope: CipherEnvelope, key: SecretKey): String {
