@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="zh-Hans" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Multica Android · 核心交互原型 V2</title>
+<style>
+  :root {
+    --canvas: #F6F8FC;
+    --surface: #FFFFFF;
+    --text: #161A22;
+    --muted: #526070;
+    --action: #285CC7;
+    --on-action: #FFFFFF;
+    --warning-bg: #FFF1D6;
+    --warning-text: #6F410D;
+    --warning-icon: #8F4D00;
+    --danger-bg: #FCE8ED;
+    --danger-text: #981B35;
+    --danger: #B4233C;
+    --on-danger: #FFFFFF;
+    --line: #D7DDE7;
+    --line-strong: #AEB8C7;
+    --scrim: rgba(14,17,23,.58);
+    --nav: #EEF2FA;
+    --unread: #285CC7;
+    --shadow: 0 18px 48px rgba(14,17,23,.2);
+    --phone-w: 390px;
+  }
+  html[data-theme="dark"] {
+    --canvas: #0E1117;
+    --surface: #171C24;
+    --text: #F4F7FB;
+    --muted: #B2BDCC;
+    --action: #9AB9FF;
+    --on-action: #10213F;
+    --warning-bg: #3B2A13;
+    --warning-text: #FFD58E;
+    --warning-icon: #F2B85A;
+    --danger-bg: #432029;
+    --danger-text: #FFB0BC;
+    --danger: #FF8FA2;
+    --on-danger: #35131B;
+    --line: #343D4B;
+    --line-strong: #667285;
+    --scrim: rgba(0,0,0,.72);
+    --nav: #11161E;
+    --unread: #9AB9FF;
+    --shadow: 0 18px 56px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--text);
+    font-family: Roboto, "Noto Sans CJK SC", "Noto Sans SC", system-ui, -apple-system, sans-serif;
+    line-height: 1.45;
+  }
+  button, input { font: inherit; }
+  button { color: inherit; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+    outline: 3px solid var(--action);
+    outline-offset: 2px;
+  }
+  .skip {
+    position: fixed; left: 8px; top: 8px; transform: translateY(-150%);
+    padding: 10px 14px; background: var(--surface); color: var(--action); z-index: 99;
+  }
+  .skip:focus { transform: none; }
+  .workbench {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(310px, 390px) var(--phone-w) minmax(300px, 420px);
+    justify-content: center;
+    align-items: start;
+    gap: 32px;
+    padding: 32px;
+  }
+  .side { position: sticky; top: 24px; align-self: start; }
+  .eyebrow {
+    margin: 0 0 10px;
+    font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--action);
+  }
+  h1 { margin: 0 0 14px; max-width: 13ch; font-size: clamp(32px, 4vw, 56px); line-height: .98; letter-spacing: -.04em; }
+  .lede { max-width: 34ch; margin: 0 0 24px; color: var(--muted); font-size: 16px; }
+  .control-title { margin: 24px 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .segmented { display: grid; border: 1px solid var(--line-strong); background: var(--surface); }
+  .segmented button {
+    min-height: 48px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer;
+  }
+  .segmented button:last-child { border-bottom: 0; }
+  .segmented button[aria-selected="true"] { background: var(--action); color: var(--on-action); font-weight: 750; }
+  .toggle {
+    width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between;
+    border: 1px solid var(--line-strong); background: var(--surface); padding: 8px 12px; cursor: pointer;
+  }
+  .toggle-mark { width: 42px; height: 24px; border: 2px solid currentColor; border-radius: 99px; padding: 2px; }
+  .toggle-mark::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: currentColor; transition: transform .18s ease; }
+  html[data-theme="dark"] .toggle-mark::after { transform: translateX(18px); }
+  .scope-note { margin-top: 20px; padding: 14px 0; border-top: 2px solid var(--text); border-bottom: 1px solid var(--line); }
+  .scope-note strong { display: block; margin-bottom: 4px; }
+  .scope-note p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .device {
+    width: var(--phone-w); height: 844px; position: relative; overflow: hidden;
+    border: 10px solid #222832; border-radius: 36px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  html[data-theme="dark"] .device { border-color: #485261; }
+  .screen { height: 100%; display: none; flex-direction: column; background: var(--surface); }
+  .screen.active { display: flex; }
+  .statusbar { height: 28px; flex: 0 0 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; background: var(--surface); font: 700 12px/1 system-ui; }
+  .status-icons { letter-spacing: 2px; }
+  .topbar { min-height: 64px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 18px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .topbar h2 { min-width: 0; margin: 0; flex: 1; font-size: 22px; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .context { display: block; color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .03em; }
+  .icon-button { width: 48px; height: 48px; flex: 0 0 48px; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
+  .icon-button svg, .nav-item svg, .sheet-icon svg, .meta-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .main { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; background: var(--surface); }
+  .search-row { padding: 10px 14px; display: flex; gap: 8px; border-bottom: 1px solid var(--line); }
+  .search {
+    min-height: 48px; flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--line-strong); background: var(--canvas); color: var(--muted);
+  }
+  .filter-button { min-width: 48px; min-height: 48px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; }
+  .section-head { min-height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: var(--canvas); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .section-head h3 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .section-head span { color: var(--muted); font-size: 12px; }
+  .event {
+    width: 100%; min-height: 82px; display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center;
+    padding: 10px 14px 10px 10px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; cursor: pointer;
+  }
+  .event:hover, .timeline-action:hover, .sheet-action:hover { background: var(--canvas); }
+  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--unread); }
+  .event-copy { min-width: 0; overflow: hidden; }
+  .event-key, .event-title, .event-meta { display: block; }
+  .event-key { margin-bottom: 2px; color: var(--muted); font: 700 11px/1.2 ui-monospace, "JetBrains Mono", monospace; }
+  .event-title { margin: 0; font-size: 15px; font-weight: 760; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-meta { margin-top: 3px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .event-time { align-self: start; margin-top: 3px; color: var(--muted); font-size: 11px; }
+  .status-line { min-height: 56px; display: flex; gap: 10px; align-items: center; padding: 8px 14px; background: var(--warning-bg); color: var(--warning-text); border-bottom: 1px solid var(--warning-icon); }
+  .status-line .symbol { color: var(--warning-icon); font-weight: 900; }
+  .status-line span { flex: 1; font-size: 12px; font-weight: 650; }
+  .status-line button { min-height: 40px; border: 0; background: transparent; color: inherit; font-weight: 800; cursor: pointer; }
+
+  .bottom-nav { height: 76px; flex: 0 0 76px; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--nav); border-top: 1px solid var(--line); padding-bottom: 6px; }
+  .nav-item { position: relative; min-height: 64px; border: 0; background: transparent; display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; cursor: pointer; }
+  .nav-item.current { color: var(--action); font-weight: 800; }
+  .p1-tag { position: absolute; top: 4px; right: 9px; padding: 1px 4px; background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-icon); font-size: 8px; font-weight: 900; }
+
+  .issue-hero { padding: 18px 18px 14px; border-bottom: 1px solid var(--line); }
+  .issue-key { color: var(--action); font: 750 12px/1.3 ui-monospace, "JetBrains Mono", monospace; }
+  .issue-hero h3 { margin: 7px 0 14px; font-size: 22px; line-height: 1.2; letter-spacing: -.02em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 12px; font-weight: 700; }
+  .chip.warning { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-icon); }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
+  .meta { min-height: 64px; display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .meta:nth-child(even) { border-right: 0; }
+  .meta-icon { color: var(--muted); }
+  .meta small { display: block; color: var(--muted); font-size: 10px; }
+  .meta strong { display: block; font-size: 12px; }
+  .timeline-label { padding: 12px 16px 6px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .timeline-item { display: grid; grid-template-columns: 28px 1fr 48px; gap: 8px; padding: 8px 8px 12px 16px; }
+  .avatar { width: 28px; height: 28px; display: grid; place-items: center; background: var(--action); color: var(--on-action); font-size: 11px; font-weight: 900; }
+  .comment { min-width: 0; }
+  .comment-head { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
+  .comment-head strong { font-size: 12px; }
+  .comment-head time { color: var(--muted); font-size: 10px; }
+  .comment p { margin: 0; font-size: 13px; }
+  .run-trace { margin-top: 7px; border-left: 3px solid var(--warning-icon); padding: 7px 9px; background: var(--warning-bg); color: var(--warning-text); font: 650 11px/1.45 ui-monospace, "JetBrains Mono", monospace; }
+  .timeline-action { width: 48px; height: 48px; border: 0; background: transparent; cursor: pointer; }
+  .composer { border-top: 1px solid var(--line); background: var(--surface); padding: 8px 10px; }
+  .draft-status { display: flex; justify-content: space-between; gap: 8px; margin: 0 5px 5px; color: var(--muted); font-size: 10px; }
+  .draft-status strong { color: var(--warning-text); }
+  .compose-row { display: flex; align-items: flex-end; gap: 4px; }
+  .compose-row input { min-width: 0; min-height: 48px; flex: 1; border: 1px solid var(--line-strong); background: var(--canvas); color: var(--text); padding: 0 12px; }
+  .send { width: 48px; height: 48px; border: 0; background: var(--action); color: var(--on-action); font-weight: 900; cursor: pointer; }
+
+  .chat-empty { min-height: 100%; display: grid; align-content: center; justify-items: center; padding: 28px; text-align: center; }
+  .chat-empty .mark { font-size: 36px; color: var(--warning-icon); }
+  .chat-empty h3 { margin: 12px 0 8px; }
+  .chat-empty p { max-width: 28ch; margin: 0; color: var(--muted); }
+  .chat-empty .boundary { margin-top: 18px; padding: 12px; background: var(--warning-bg); color: var(--warning-text); border-left: 4px solid var(--warning-icon); font-size: 12px; text-align: left; }
+
+  .overlay { position: absolute; inset: 0; z-index: 20; background: var(--scrim); display: none; align-items: flex-end; }
+  .overlay.open { display: flex; }
+  .sheet { width: 100%; background: var(--surface); border-radius: 22px 22px 0 0; box-shadow: 0 -16px 40px rgba(0,0,0,.22); padding: 10px 0 18px; transform-origin: bottom; animation: rise .18s ease-out; }
+  .grabber { width: 36px; height: 4px; margin: 0 auto 8px; border-radius: 8px; background: var(--line-strong); }
+  .sheet h3 { margin: 0; padding: 8px 20px 12px; font-size: 16px; border-bottom: 1px solid var(--line); }
+  .sheet-context { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 500; }
+  .sheet-action { width: 100%; min-height: 56px; display: grid; grid-template-columns: 48px 1fr; align-items: center; border: 0; background: transparent; padding: 4px 18px 4px 10px; text-align: left; cursor: pointer; }
+  .sheet-icon { display: grid; place-items: center; color: var(--muted); }
+  .sheet-action strong { font-size: 14px; }
+  .sheet-action small { display: block; color: var(--muted); font-size: 11px; }
+  .sheet-separator { height: 8px; margin: 4px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--canvas); }
+  .sheet-action.danger, .sheet-action.danger .sheet-icon { color: var(--danger-text); }
+  .sheet-action.danger small { color: var(--danger-text); opacity: .86; }
+
+  .review { border-top: 6px solid var(--action); background: var(--surface); box-shadow: var(--shadow); }
+  .review-head { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  .review-head h2 { margin: 0 0 4px; font-size: 19px; }
+  .review-head p { margin: 0; color: var(--muted); font-size: 12px; }
+  .review-row { display: grid; grid-template-columns: 86px 1fr; gap: 12px; padding: 13px 20px; border-bottom: 1px solid var(--line); }
+  .review-row .label { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .review-row p { margin: 0; font-size: 13px; }
+  .review-row code { font: 650 11px ui-monospace, "JetBrains Mono", monospace; color: var(--action); word-break: break-all; }
+  .evidence { margin: 18px 20px 20px; }
+  .swatch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .swatch { min-height: 76px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; font-size: 11px; font-weight: 750; }
+  .swatch.warning { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-icon); }
+  .swatch.danger { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
+  .evidence small { display: block; margin-top: 10px; color: var(--muted); }
+  .toast { position: absolute; left: 18px; right: 18px; bottom: 90px; z-index: 30; display: none; padding: 12px 14px; background: var(--text); color: var(--surface); box-shadow: var(--shadow); font-size: 12px; }
+  .toast.show { display: block; animation: rise .18s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 1120px) {
+    .workbench { grid-template-columns: minmax(280px, 360px) var(--phone-w); }
+    .review { position: static; grid-column: 1 / -1; width: min(812px, 100%); }
+  }
+  @media (max-width: 780px) {
+    .workbench { display: flex; flex-direction: column; align-items: center; padding: 20px 12px 36px; }
+    .side { position: static; width: min(var(--phone-w), 100%); }
+    h1 { max-width: none; }
+    .device { width: min(var(--phone-w), calc(100vw - 24px)); height: min(844px, calc(100vh - 24px)); min-height: 650px; }
+    .review { width: min(var(--phone-w), 100%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#prototype">跳到原型</a>
+<main class="workbench">
+  <section class="side" aria-labelledby="page-title">
+    <p class="eyebrow">Android adaptation / review build</p>
+    <h1 id="page-title">状态优先，不让装饰抢走任务。</h1>
+    <p class="lede">核心界面 V2。以 BA V2 的任务协作 P0、D0 草稿边界和用途化浅/深色 token 为唯一待确认范围。</p>
+
+    <p class="control-title">界面</p>
+    <div class="segmented" role="tablist" aria-label="切换原型界面">
+      <button role="tab" aria-selected="true" aria-controls="screen-inbox" data-screen="inbox">Inbox · 前台通知起点</button>
+      <button role="tab" aria-selected="false" aria-controls="screen-issue" data-screen="issue">Issue · 详情与时间线</button>
+      <button role="tab" aria-selected="false" aria-controls="screen-chat" data-screen="chat">Chat · 默认 P1 边界</button>
+    </div>
+
+    <p class="control-title">显示</p>
+    <button class="toggle" id="themeToggle" type="button" aria-pressed="false">
+      <span>浅色 / 深色用途 token</span><span class="toggle-mark" aria-hidden="true"></span>
+    </button>
+
+    <div class="scope-note">
+      <strong>原型 ≠ 验收通过</strong>
+      <p>Android build、外部 deep link、TalkBack、对比度截图取样和 38 项矩阵均仍需实机证据。</p>
+    </div>
+  </section>
+
+  <section class="device" id="prototype" aria-label="Multica Android 手机原型">
+    <article class="screen active" id="screen-inbox" data-screen-panel="inbox" aria-label="Inbox 界面">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▮◒ 89%</span></div>
+      <header class="topbar">
+        <div style="flex:1"><span class="context">ACME WORKSPACE</span><h2>Inbox</h2></div>
+        <button class="icon-button" type="button" aria-label="刷新 Inbox" data-toast="已请求刷新；真实应用需在 p95 目标内报告状态">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+        </button>
+        <button class="icon-button" type="button" aria-label="更多 Inbox 操作" data-sheet="inbox">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </button>
+      </header>
+      <div class="status-line" role="status">
+        <span class="symbol" aria-hidden="true">!</span><span>前台恢复延迟 · 上次同步 7 秒前</span>
+        <button type="button" data-toast="正在重新核对服务端状态">重试</button>
+      </div>
+      <div class="search-row">
+        <div class="search" aria-label="搜索 Inbox">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <span>Search issues and runs</span>
+        </div>
+        <button class="filter-button" type="button" aria-label="筛选 Inbox" data-toast="筛选菜单：Needs you / Runs / Recent">⌁</button>
+      </div>
+      <div class="main">
+        <div class="section-head"><h3>Needs you</h3><span>3 unread</span></div>
+        <button class="event" type="button" data-open-issue>
+          <span class="unread-dot" aria-label="未读"></span>
+          <span class="event-copy"><span class="event-key">GANY-4</span><span class="event-title">Android adaptation proposal</span><span class="event-meta">小智 requested design changes</span></span>
+          <time class="event-time">2m</time>
+        </button>
+        <button class="event" type="button" data-toast="外部写入前将重新验证权限">
+          <span class="unread-dot" aria-label="未读"></span>
+          <span class="event-copy"><span class="event-key">MUL-9241</span><span class="event-title">Review attachment retry</span><span class="event-meta">Upload failed · input retained</span></span>
+          <time class="event-time">8m</time>
+        </button>
+        <div class="section-head"><h3>Runs active</h3><span>1 active</span></div>
+        <button class="event" type="button" data-toast="Run 状态需以服务端读取为准">
+          <span aria-hidden="true" style="color:var(--warning-icon);font-weight:900">↻</span>
+          <span class="event-copy"><span class="event-key">RUN · 8D2A</span><span class="event-title">QA matrix audit</span><span class="event-meta">Step 18 of 38 · waiting for device</span></span>
+          <time class="event-time">live</time>
+        </button>
+        <div class="section-head"><h3>Recently changed</h3><span>Today</span></div>
+        <button class="event" type="button" data-toast="已读事件">
+          <span aria-hidden="true"></span>
+          <span class="event-copy"><span class="event-key">MUL-9202</span><span class="event-title">Mobile ownership refactor</span><span class="event-meta">Baseline change would trigger REG03</span></span>
+          <time class="event-time">32m</time>
+        </button>
+      </div>
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item current" type="button" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 14h4l2 2h4l2-2h4"/></svg><span>Inbox</span></button>
+        <button class="nav-item" type="button" data-toast="My Work 保留在四个主目的地"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"/></svg><span>My Work</span></button>
+        <button class="nav-item" type="button" data-go-screen="chat"><span class="p1-tag">P1</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H8l-4 3z"/></svg><span>Chat</span></button>
+        <button class="nav-item" type="button" data-toast="More"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
+      </nav>
+    </article>
+
+    <article class="screen" id="screen-issue" data-screen-panel="issue" aria-label="Issue 详情界面">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▮◒ 89%</span></div>
+      <header class="topbar">
+        <button class="icon-button" type="button" aria-label="返回 Inbox" data-go-screen="inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <div style="flex:1;min-width:0"><span class="context">ACME / MOBILE</span><h2>GANY-4</h2></div>
+        <button class="icon-button" type="button" aria-label="更多 Issue 操作" data-sheet="issue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+      </header>
+      <div class="main">
+        <section class="issue-hero">
+          <div class="issue-key">GANY-4 · TASK</div>
+          <h3>创建 Multica Android 应用</h3>
+          <div class="chips"><span class="chip">In progress</span><span class="chip warning">High priority</span></div>
+        </section>
+        <section class="meta-grid" aria-label="Issue 字段">
+          <div class="meta"><span class="meta-icon">◉</span><div><small>Assignee</small><strong>Squad · Mobile</strong></div></div>
+          <div class="meta"><span class="meta-icon">◇</span><div><small>Project</small><strong>multica</strong></div></div>
+          <div class="meta"><span class="meta-icon">▣</span><div><small>Due date</small><strong>Not set</strong></div></div>
+          <div class="meta"><span class="meta-icon">↗</span><div><small>Recovery</small><strong>D0 · same process</strong></div></div>
+        </section>
+        <div class="timeline-label">Execution timeline</div>
+        <article class="timeline-item">
+          <span class="avatar" aria-hidden="true">LD</span>
+          <div class="comment"><div class="comment-head"><strong>小智 · LD</strong><time>09:42</time></div><p>收敛 token、菜单替代与验收证据后再进入实现。</p></div>
+          <button class="timeline-action" type="button" aria-label="评论操作" data-sheet="comment">•••</button>
+        </article>
+        <article class="timeline-item">
+          <span class="avatar" aria-hidden="true">QA</span>
+          <div class="comment"><div class="comment-head"><strong>小云 · QA</strong><time>09:47</time></div><p>38 cases mapped. Android device evidence is still missing.</p><div class="run-trace">BUILD01 · pending<br>LINK01–03 · pending<br>REG01–02 · pending</div></div>
+          <button class="timeline-action" type="button" aria-label="QA 评论操作" data-sheet="comment">•••</button>
+        </article>
+      </div>
+      <section class="composer" aria-label="添加评论">
+        <div class="draft-status"><span><strong>D0</strong> same-process draft</span><span>Not saved after process death</span></div>
+        <div class="compose-row">
+          <button class="icon-button" type="button" aria-label="添加附件" data-toast="附件 URI 仅在同进程及权限有效时保留">＋</button>
+          <input id="commentInput" type="text" aria-label="评论内容" placeholder="Write a comment…">
+          <button class="send" type="button" aria-label="发送评论" data-toast="原型不执行写入；真实应用需防重复并核验 unknown 结果">↑</button>
+        </div>
+      </section>
+    </article>
+
+    <article class="screen" id="screen-chat" data-screen-panel="chat" aria-label="Chat 范围说明">
+      <div class="statusbar"><span>9:41</span><span class="status-icons">▮◒ 89%</span></div>
+      <header class="topbar"><button class="icon-button" type="button" aria-label="返回 Inbox" data-go-screen="inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button><h2>Chat</h2></header>
+      <div class="main">
+        <section class="chat-empty">
+          <div class="mark" aria-hidden="true">◇</div>
+          <h3>Visible destination, not default P0</h3>
+          <p>保留信息架构位置，不以页面存在宣称 Chat 链路已经纳入首版。</p>
+          <div class="boundary"><strong>升级条件</strong><br>若 Chat 升 P0，需增加 AC14 全链、断线重入、pending/failed/unknown、Stop 行为及 +4–7 RD 人日。</div>
+        </section>
+      </div>
+      <nav class="bottom-nav" aria-label="主导航">
+        <button class="nav-item" type="button" data-go-screen="inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 14h4l2 2h4l2-2h4"/></svg><span>Inbox</span></button>
+        <button class="nav-item" type="button" data-toast="My Work"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"/></svg><span>My Work</span></button>
+        <button class="nav-item current" type="button" aria-current="page"><span class="p1-tag">P1</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H8l-4 3z"/></svg><span>Chat</span></button>
+        <button class="nav-item" type="button" data-toast="More"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span></button>
+      </nav>
+    </article>
+
+    <div class="overlay" id="sheetOverlay" role="presentation">
+      <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <div class="grabber" aria-hidden="true"></div>
+        <h3 id="sheetTitle">Comment actions<span class="sheet-context">小智 · “收敛 token、菜单替代…”</span></h3>
+        <button class="sheet-action" type="button" data-toast="Reply target kept in D0 while process remains alive"><span class="sheet-icon" aria-hidden="true">↩</span><span><strong>Reply</strong><small>Keep reply target in the same process</small></span></button>
+        <button class="sheet-action" type="button" data-toast="Copy link"><span class="sheet-icon" aria-hidden="true">⌁</span><span><strong>Copy link</strong><small>Share a permission-checked route</small></span></button>
+        <button class="sheet-action" type="button" data-toast="Copy text"><span class="sheet-icon" aria-hidden="true">□</span><span><strong>Copy text</strong><small>Copy visible comment content</small></span></button>
+        <div class="sheet-separator" aria-hidden="true"></div>
+        <button class="sheet-action danger" type="button" data-toast="真实应用下一步必须显示两按钮确认 dialog"><span class="sheet-icon" aria-hidden="true">×</span><span><strong>Delete comment…</strong><small>Requires a separate confirmation dialog</small></span></button>
+      </section>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </section>
+
+  <aside class="review side" aria-labelledby="review-title">
+    <div class="review-head"><h2 id="review-title">Review notes</h2><p>与 BA V2 `d5c55e0`、38 项矩阵同一范围</p></div>
+    <div class="review-row"><span class="label">Baseline</span><p><code>main@9cb59baec1ea51d0745651db47eb4d67c025b8b7</code><br>monorepo <code>apps/mobile</code></p></div>
+    <div class="review-row"><span class="label">P0</span><p>任务协作；Chat、push、reaction 写入、HTTPS App Links 默认 P1。</p></div>
+    <div class="review-row"><span class="label">Draft</span><p><strong>D0：</strong>同进程保存。进程死亡后不承诺恢复；D1 需加密、24h TTL 与 +4–7 人日。</p></div>
+    <div class="review-row"><span class="label">Menu</span><p>多操作用 modal bottom sheet；少量 overflow 用 anchored menu；破坏项再进两按钮确认。不得用 Android Alert 承载 4+ 选择。</p></div>
+    <div class="review-row"><span class="label">Evidence</span><p>G1：BUILD01/02、LINK01–03、REG01/02。G2：全部适用 P0 和 38-case matrix。</p></div>
+    <div class="evidence">
+      <div class="swatch-row">
+        <div class="swatch warning"><span>Warning role pair</span><span>7.713873550864:1</span></div>
+        <div class="swatch danger"><span>Danger role pair</span><span>7.040023004602:1</span></div>
+      </div>
+      <small>显示值为 Light 文本/容器静态计算。最终 Android 渲染仍须截图取样复验。</small>
+    </div>
+  </aside>
+</main>
+<script>
+(() => {
+  const html = document.documentElement;
+  const tabs = [...document.querySelectorAll('[data-screen]')];
+  const panels = [...document.querySelectorAll('[data-screen-panel]')];
+  const toast = document.getElementById('toast');
+  const overlay = document.getElementById('sheetOverlay');
+  let toastTimer;
+
+  function showScreen(name) {
+    panels.forEach(panel => panel.classList.toggle('active', panel.dataset.screenPanel === name));
+    tabs.forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.screen === name)));
+  }
+  function announce(message) {
+    clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.classList.add('show');
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+  }
+  function openSheet() {
+    overlay.classList.add('open');
+    overlay.querySelector('button').focus();
+  }
+  function closeSheet() {
+    overlay.classList.remove('open');
+  }
+
+  tabs.forEach(tab => tab.addEventListener('click', () => showScreen(tab.dataset.screen)));
+  document.querySelectorAll('[data-go-screen]').forEach(button => button.addEventListener('click', () => showScreen(button.dataset.goScreen)));
+  document.querySelectorAll('[data-open-issue]').forEach(button => button.addEventListener('click', () => showScreen('issue')));
+  document.querySelectorAll('[data-sheet]').forEach(button => button.addEventListener('click', openSheet));
+  document.querySelectorAll('[data-toast]').forEach(button => button.addEventListener('click', () => { closeSheet(); announce(button.dataset.toast); }));
+
+  document.getElementById('themeToggle').addEventListener('click', event => {
+    const dark = html.dataset.theme !== 'dark';
+    html.dataset.theme = dark ? 'dark' : 'light';
+    event.currentTarget.setAttribute('aria-pressed', String(dark));
+  });
+  overlay.addEventListener('click', event => { if (event.target === overlay) closeSheet(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && overlay.classList.contains('open')) closeSheet(); });
+})();
+</script>
+</body>
+</html>
