@@ -8,22 +8,22 @@
 
 本仓库已建立最小原生 Android 工程。应用层、主题、HTTP/实时合同和 JVM 合同测试均为 Kotlin；UI 使用 Jetpack Compose / Material 3。Web、iOS 和既有 React Native 源码只作为业务行为与线上协议参考，不复制 TypeScript runtime，也不依赖私有 `@multica/core`。
 
-当前 debug 默认进入确定性的本地 fixture，不发送线上请求；`API_BASE_URL` 默认仍是不可路由的 `https://api.example.invalid`。本轮已实现登录→工作区→任务列表的最小纵向流程，并提供基于 `HttpURLConnection` 的首批 HTTP 合同适配器，但只有在显式关闭 fixture 且注入获授权环境 URL 后才会启用。WebSocket、数据库和依赖注入框架仍未引入，不能把本地流程通过误报为真实服务联调通过。
+当前 debug 默认进入确定性的本地 fixture，不发送线上请求；`API_BASE_URL` 默认仍是不可路由的 `https://api.example.invalid`。本轮已实现登录→工作区→任务列表→任务详情与只读时间线的最小纵向流程，并提供基于 `HttpURLConnection` 的首批 HTTP 合同适配器，但只有在显式关闭 fixture 且注入获授权环境 URL 后才会启用。WebSocket、数据库和依赖注入框架仍未引入，不能把本地流程通过误报为真实服务联调通过。
 
 ## 2. 工程与模块边界
 
 ```text
 app
-├── MainActivity / MulticaApp       Compose 单 Activity 与登录→工作区→任务列表
+├── MainActivity / MulticaApp       Compose 单 Activity 与登录→工作区→任务→只读详情/时间线
 ├── ui/theme                        按用途区分的浅/深色 Material token
-├── feature/AppController           单向状态机；加载/空态/重试/401
-├── model                           User、Workspace、IssueSummary
+├── feature/AppController           单向状态机；加载/空态/重试/401/generation fence
+├── model                           User、Workspace、IssueSummary/Detail、TimelineItem
 └── core
     ├── config/AppConfig            环境 URL 与版本的启动约束
     ├── auth                        AndroidKeyStore AES-GCM session store
     └── network
         ├── ApiContract             HTTP 路由、header、30 s 超时合同
-        ├── HttpMulticaGateway      OTP、me、workspaces、issues HTTP 适配
+        ├── HttpMulticaGateway      OTP、me、workspaces、issues/detail/timeline HTTP 适配
         ├── LocalFixtureGateway     默认离线确定性夹具与故障场景
         └── RealtimeContract        /ws URL、auth 首帧、心跳/退避常量
 ```
@@ -53,10 +53,10 @@ app
 | 工作区 | `X-Workspace-Slug: <slug>`；服务端负责 slug→ID 与成员资格校验 |
 | 登录 | `POST /auth/send-code` `{email}`；`POST /auth/verify-code` `{email,code}` → token/user |
 | 会话更新 | `POST /api/auth/refresh`；响应含 `renewed`、`token`、`expires_at`、`check_again_in_seconds` |
-| 首批读取 | `GET /api/me`、`GET /api/workspaces`、`GET /api/inbox` |
+| 首批读取 | `GET /api/me`、`GET /api/workspaces`、`GET /api/inbox`、`GET /api/issues`、`GET /api/issues/:id`、`GET /api/issues/:id/timeline` |
 | 超时与失效 | 参考移动端 30 s；401 才清理会话，网络错误/5xx 不误删 token |
 
-`ApiRoutes`、`ClientMetadata` 与 `ApiContract.headers` 已将这些不随 transport 变化的部分固化，并用 JVM 测试确保 Android 标识、Bearer 和 workspace header 不回退为 iOS。`HttpMulticaGateway` 当前实现 OTP、`/api/me`、workspaces 和 issues；真实 OTP/环境尚未获授权执行。
+`ApiRoutes`、`ClientMetadata` 与 `ApiContract.headers` 已将这些不随 transport 变化的部分固化，并用 JVM 测试确保 Android 标识、Bearer 和 workspace header 不回退为 iOS。`HttpMulticaGateway` 当前实现 OTP、`/api/me`、workspaces、issue 列表/详情和完整 oldest-first timeline 数组；时间线按 6 条在 UI 本地渐进展示，不发送已移除的服务端分页参数。真实 OTP/环境尚未获授权执行。
 
 ### 3.2 WebSocket
 

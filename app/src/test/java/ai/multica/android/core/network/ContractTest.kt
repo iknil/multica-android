@@ -22,6 +22,13 @@ class ContractTest {
     }
 
     @Test
+    fun buildsReadOnlyIssueRoutesWithoutPaginationParameters() {
+        assertEquals("/api/issues/issue-1", ApiRoutes.issue("issue-1"))
+        assertEquals("/api/issues/issue-1/timeline", ApiRoutes.timeline("issue-1"))
+        assertFalse(ApiRoutes.timeline("issue-1").contains('?'))
+    }
+
+    @Test
     fun mapsHttpsToAuthenticatedAndroidWebSocketUrl() {
         val url = RealtimeContract.webSocketUrl("https://api.example.com/v1", "team one", "0.1.0")
         assertEquals(

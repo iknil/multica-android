@@ -8,6 +8,9 @@ object ApiRoutes {
     const val WORKSPACES = "/api/workspaces"
     const val ISSUES = "/api/issues"
     const val INBOX = "/api/inbox"
+
+    fun issue(issueId: String): String = "$ISSUES/$issueId"
+    fun timeline(issueId: String): String = "${issue(issueId)}/timeline"
 }
 
 data class ClientMetadata(

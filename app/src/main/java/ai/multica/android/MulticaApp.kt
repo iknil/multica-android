@@ -1,5 +1,6 @@
 package ai.multica.android
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -51,6 +52,8 @@ import ai.multica.android.core.network.LocalFixtureGateway
 import ai.multica.android.feature.AppController
 import ai.multica.android.feature.AppState
 import ai.multica.android.model.IssueSummary
+import ai.multica.android.model.TimelineItem
+import ai.multica.android.model.TimelineKind
 import ai.multica.android.model.Workspace
 import kotlinx.coroutines.launch
 
@@ -85,7 +88,17 @@ fun MulticaApp(controller: AppController, fixtureMode: Boolean) {
                 )
                 is AppState.IssueList -> IssueListScreen(
                     current,
+                    onIssue = { scope.launch { controller.openIssue(it) } },
                     onRetry = { scope.launch { controller.retryIssues() } },
+                    onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
+                    onLogout = { scope.launch { controller.logout() } },
+                )
+                is AppState.IssueDetailView -> IssueDetailScreen(
+                    current,
+                    onBack = controller::backToIssues,
+                    onRetryDetail = { scope.launch { controller.retryIssueDetail() } },
+                    onRetryTimeline = { scope.launch { controller.retryTimeline() } },
+                    onLoadMore = controller::loadMoreTimeline,
                     onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
                     onLogout = { scope.launch { controller.logout() } },
                 )
@@ -290,6 +303,7 @@ private fun WorkspaceScreen(
 @Composable
 private fun IssueListScreen(
     state: AppState.IssueList,
+    onIssue: (IssueSummary) -> Unit,
     onRetry: () -> Unit,
     onChangeWorkspace: () -> Unit,
     onLogout: () -> Unit,
@@ -322,14 +336,19 @@ private fun IssueListScreen(
                 }
                 HorizontalDivider()
             }
-            items(state.issues, key = IssueSummary::id) { issue -> IssueRow(issue) }
+            items(state.issues, key = IssueSummary::id) { issue -> IssueRow(issue, onIssue) }
         }
     }
 }
 
 @Composable
-private fun IssueRow(issue: IssueSummary) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)) {
+private fun IssueRow(issue: IssueSummary, onClick: (IssueSummary) -> Unit) {
+    Card(
+        onClick = { onClick(issue) },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(issue.identifier, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.weight(1f))
@@ -343,7 +362,168 @@ private fun IssueRow(issue: IssueSummary) {
             modifier = Modifier.padding(top = 4.dp),
         )
     }
-    HorizontalDivider(Modifier.padding(horizontal = 24.dp))
+    }
+}
+
+@Composable
+private fun IssueDetailScreen(
+    state: AppState.IssueDetailView,
+    onBack: () -> Unit,
+    onRetryDetail: () -> Unit,
+    onRetryTimeline: () -> Unit,
+    onLoadMore: () -> Unit,
+    onChangeWorkspace: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("Back to tasks") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onChangeWorkspace) { Text("Workspace") }
+                TextButton(onClick = onLogout) { Text("Sign out") }
+            }
+        }
+        item {
+            Text(
+                state.summary.identifier,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                state.detail?.title ?: state.summary.title,
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        when {
+            state.detailLoading -> item { InlineLoading("Loading task details") }
+            state.detailError != null -> item {
+                RetryPanel("Task details unavailable", state.detailError, onRetryDetail)
+            }
+            state.detail != null -> item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${state.detail.status.replace('_', ' ')} · ${state.detail.priority} priority",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text("Description", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        state.detail.description?.takeIf { it.isNotBlank() } ?: "No description provided.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "Updated ${state.detail.updatedAt}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        if (!state.detailLoading && state.detailError == null) {
+            item {
+                HorizontalDivider()
+                Text(
+                    "Comments and activity",
+                    modifier = Modifier.padding(top = 14.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+            when {
+                state.timelineLoading -> item { InlineLoading("Loading comments and activity") }
+                state.timelineError != null -> item {
+                    RetryPanel("Timeline unavailable", state.timelineError, onRetryTimeline)
+                }
+                state.timeline.isEmpty() -> item {
+                    Text(
+                        "No comments or activity yet.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 18.dp),
+                    )
+                }
+                else -> {
+                    items(state.visibleTimeline, key = TimelineItem::id) { item -> TimelineRow(item) }
+                    if (state.hasMoreTimeline) {
+                        item {
+                            OutlinedButton(
+                                onClick = onLoadMore,
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                            ) {
+                                Text("Load more (${state.timeline.size - state.visibleTimelineCount} remaining)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineRow(item: TimelineItem) {
+    val isComment = item.kind == TimelineKind.COMMENT
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (isComment) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.background,
+        shape = RoundedCornerShape(12.dp),
+        border = if (isComment) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(item.actorName, style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (isComment) "Comment" else "Activity",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                item.body,
+                modifier = Modifier.padding(top = 6.dp),
+                color = if (item.deleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                item.createdAt,
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun InlineLoading(label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(Modifier.width(28.dp).semantics { contentDescription = label })
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun RetryPanel(title: String, detail: String, onRetry: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(detail, modifier = Modifier.padding(top = 4.dp, bottom = 10.dp))
+            OutlinedButton(onClick = onRetry, modifier = Modifier.height(48.dp)) { Text("Retry") }
+        }
+    }
 }
 
 @Composable

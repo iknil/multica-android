@@ -1,8 +1,9 @@
 # Multica Android
 
 Native Android implementation built with Kotlin and Jetpack Compose. The current
-vertical slice covers sign-in, workspace selection, and a task list, including
-loading, empty, retry, and expired-session states.
+vertical slice covers sign-in, workspace selection, a task list, task detail,
+and read-only comments/activity. It includes loading, empty, retry, local
+incremental timeline reveal, and expired-session states.
 
 ## Safe default
 

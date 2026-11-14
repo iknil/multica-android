@@ -2,6 +2,9 @@ package ai.multica.android.core.network
 
 import ai.multica.android.model.AuthenticatedSession
 import ai.multica.android.model.IssueSummary
+import ai.multica.android.model.IssueDetail
+import ai.multica.android.model.TimelineItem
+import ai.multica.android.model.TimelineKind
 import ai.multica.android.model.User
 import ai.multica.android.model.Workspace
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +16,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.net.URLEncoder
 import java.util.UUID
 
 /** Minimal read-only P0 transport matching the verified server/mobile contract. */
@@ -61,6 +65,27 @@ class HttpMulticaGateway(
             )
         }
     }
+
+    override suspend fun getIssue(token: String, workspaceSlug: String, issueId: String): IssueDetail {
+        val value = request(
+            ApiRoutes.issue(issueId.pathSegment()),
+            token = token,
+            workspaceSlug = workspaceSlug,
+        ).asObject()
+        return value.toIssueDetail()
+    }
+
+    override suspend fun getTimeline(
+        token: String,
+        workspaceSlug: String,
+        issueId: String,
+    ): List<TimelineItem> = request(
+        // The verified endpoint deliberately returns the complete oldest-first
+        // array. UI pagination is local and no legacy cursor params are sent.
+        ApiRoutes.timeline(issueId.pathSegment()),
+        token = token,
+        workspaceSlug = workspaceSlug,
+    ).asArray().mapObjects(JSONObject::toTimelineItem)
 
     private suspend fun request(
         path: String,
@@ -130,6 +155,40 @@ private fun JSONObject.toUser() = User(
     name = optString("name"),
     email = requiredString("email"),
 )
+
+private fun JSONObject.toIssueDetail() = IssueDetail(
+    id = requiredString("id"),
+    identifier = requiredString("identifier"),
+    title = requiredString("title"),
+    description = if (isNull("description")) null else optString("description"),
+    status = requiredString("status"),
+    priority = requiredString("priority"),
+    createdAt = requiredString("created_at"),
+    updatedAt = requiredString("updated_at"),
+)
+
+private fun JSONObject.toTimelineItem(): TimelineItem {
+    val kind = if (optString("type") == "comment") TimelineKind.COMMENT else TimelineKind.ACTIVITY
+    val deleted = !isNull("deleted_at") && has("deleted_at")
+    val body = when {
+        deleted -> "Deleted comment"
+        kind == TimelineKind.COMMENT -> optString("content").ifBlank { "Comment without text" }
+        else -> optString("action").ifBlank { "updated this task" }
+    }
+    return TimelineItem(
+        id = requiredString("id"),
+        kind = kind,
+        actorName = optString("actor_name").ifBlank {
+            optString("actor_id").ifBlank { optString("actor_type", "Unknown actor") }
+        },
+        createdAt = requiredString("created_at"),
+        body = body,
+        parentId = if (isNull("parent_id")) null else optString("parent_id").ifBlank { null },
+        deleted = deleted,
+    )
+}
+
+private fun String.pathSegment(): String = URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
 
 private inline fun <T> JSONArray.mapObjects(transform: (JSONObject) -> T): List<T> =
     (0 until length()).map { index ->
