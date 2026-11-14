@@ -2,7 +2,7 @@
 
 **状态：可评审方案与交互原型，不代表范围、实现或发布已获批准。**
 
-**版本：2026-11-14.2 · RD · 对齐 BA V2 `d5c55e0` 与 38 项验收矩阵**
+**版本：2026-11-14.3 · RD · 对齐 BA V2 `d5c55e0`、QA 合并复核与 38 项验收矩阵**
 
 ## 1. 评审结论
 
@@ -25,13 +25,13 @@
 |---|---|
 | 登录与工作区 | 固定 HTTPS 环境；认证失效重新鉴权，不泄露旧空间数据 |
 | 前台 Inbox | **通知起点是已登录、应用前台的 Android Inbox**；建议前台事件到可见恢复 p95 ≤ 5 秒，绝不是系统 push SLA |
-| Issue 发现 | 筛选、搜索、详情及有权限对象的外部 custom-scheme 深链 |
+| Issue 发现 | 筛选、搜索、详情；默认 LINK01–03 仅覆盖显式 `multica://` custom scheme。现有 Copy link 是 HTTPS Web URL，是否升级 App Links 见 §8 |
 | Issue 写入 | 创建、基础编辑、指派；权限和最终状态由服务端判定 |
 | 协作 | 评论、回复、mention、成功创建后的附件上传 |
 | Run | 查看及停止；未知结果先查服务端状态，不能直接重试 |
 | 可靠性 | D0 同进程保存、失败可重试、unknown-result 核验、无障碍及自适应布局 |
 
-默认 P1：Chat（AC14）、系统 push（AC22）、reaction 写入（AC23）、HTTPS App Links（LINK04）。原型底栏保留 Chat 的产品位置，但以 `P1` 标签和不可误判的说明标出，不将其计入默认工程量或验收通过。
+BA V2 当前计数保持：30 个默认 P0、4 个默认 P1、3 个条件 P0、1 个 G3 门禁，共 38 个唯一 ID。默认 P1 是 Chat（AC14）、系统 push（AC22）、reaction 写入（AC23）、HTTPS App Links（LINK04）。原型底栏保留 Chat 的产品位置，但以 `P1` 标签和不可误判的说明标出，不将其计入默认工程量或验收通过。
 
 ### 2.2 七个字段合同
 
@@ -51,7 +51,7 @@ P0 创建/基础编辑只覆盖以下字段；未在表内的管理与批处理�
 
 ### 2.3 Reaction 边界
 
-默认 P0 只呈现服务端已有 reaction 汇总，不提供增删入口，不做乐观计数。若用户升级 AC23：长按评论后显示常用 reaction 快捷行和 “More reactions” sheet，并增加权限、去重、失败回滚、快速重复点击及跨客户端一致性证据，增量估算见 §9。
+默认 P0 只呈现服务端已有 reaction 汇总，不提供增删入口，不做乐观计数。若用户升级 AC23：长按评论后显示常用 reaction 快捷行和 “More reactions” sheet，并增加权限、去重、失败回滚、快速重复点击及跨客户端一致性证据，增量估算见 §10。
 
 ## 3. 草稿恢复：原承诺、D0 与 D1
 
@@ -178,7 +178,24 @@ main 在 comment/chat/inbox/profile 及 issue/project 页面使用 `ActionSheetI
 
 `Alert.alert` 复验需加入静态搜索/代码审查，禁止 Android 分支传入超过三个按钮。所有 menu adapter 共用 typed action model，平台层只负责呈现，避免 iOS 与 Android 权限/业务规则漂移。
 
-## 8. 38 项验收矩阵对齐
+## 8. 当前分享链接来源与 P0 入口选择
+
+### 8.1 已核实来源
+
+在固定 main SHA 上，Issue 详情 `apps/mobile/app/(app)/[workspace]/issue/[id].tsx:118–162` 从构建期 `EXPO_PUBLIC_WEB_URL` 拼出 `${webUrl}/${wsSlug}/issue/${issue.identifier}`；评论菜单 `apps/mobile/components/issue/comment-context-menu.tsx:57,161` 在其后追加 `#comment-${entry.id}`。Copy link 只把这个值写入剪贴板，Open on web 用 `Linking.openURL` 打开它。它不是服务端签发的 share URL，也不是 `Linking.createURL` 生成的 `multica://` URL。
+
+已核实的构建配置：production 的 Web base 是 `https://multica.ai`，staging 是 `https://multica-app.copilothub.ai`；开发环境值取本地 env，仓库不能证明唯一值。`app.config.ts` 只有顶层 `scheme: "multica"`，没有 `android.package`、`intentFilters` 或域名 association 配置。因此当前 HTTPS Copy link **不能据源码宣称会拉起 Android**。
+
+### 8.2 两个不混用的入口方案
+
+| 方案 | 是否承接当前 HTTPS Copy link | 范围与成本 | 依赖 / 用户体验 |
+|---|---|---|---|
+| **A：将 LINK04 升 P0（现有分享入口必须拉起 App 时推荐）** | 是。为 production/staging 精确 Issue/Comment 路径配置 verified Android App Links；已安装进 App，未安装安全回 Web | 默认 34–55 基础上 +2–4 RD 人日，即 **36–59 RD 人日**；矩阵优先级变为 31 默认 P0 / 3 默认 P1 / 3 条件 P0 / 1 G3，总数仍 38 | 需域名所有者发布 `assetlinks.json`、冻结 package/signing certificate、路径白名单；冷热启动、过期登录、跨空间/撤权及 comment anchor 都复验 |
+| **B：维持 BA V2 默认 custom scheme** | 否。当前 HTTPS 仍落 Web；Android 仅承接显式 `multica://` 入口 | 保持 34–55 与当前 30/4/3/1 计数 | 可用于受控内部入口/二维码/测试 intent，但不能把 Copy link 宣称为 Android deep link；若增加 Web “Open in app” 跳板，另需 Web 范围与降级验收 |
+
+范围决策只需回答：现有 HTTPS 分享链接是否必须在首发自动进入已安装 App。回答“是”即选择 A；回答“否”即选择 B。域名文件、证书指纹和测试 URL 是选择 A 后的 G0 配置冻结/G1 联调输入，不应继续扩大范围评审。
+
+## 9. 38 项验收矩阵对齐
 
 本方案不复制或改写 BA V2 的 pass/fail 条件；`d5c55e0` 中 `android-acceptance-matrix.csv` 是范围验收主表，本节只说明设计/适配证据挂接方式。38 项均仍为 Android 实测未执行。
 
@@ -193,7 +210,7 @@ main 在 comment/chat/inbox/profile 及 issue/project 页面使用 `ActionSheetI
 
 Gate 对齐：G0 冻结组合和边界；G1 先完成 `BUILD01/02`、`LINK01–03` 及 `REG01/02` 基础证据；G2 才跑全部适用 P0 和 38 项矩阵；G3 才处理签名内测、升级与发布证据。若基线变化，立即触发 `REG03`，旧 main 证据不得沿用。
 
-## 9. 实施顺序、工作量与依赖
+## 10. 实施顺序、工作量与依赖
 
 以下为固定 SHA、monorepo、默认任务 P0、D0 下的 **RD 人日区间，不是承诺排期**。包含实现与开发自测，不含等待评审、后端改造、QA 独立执行、签名/上架及未知原生模块返工。多人并行只缩短日历时间，不减少总工作量。
 
@@ -217,23 +234,72 @@ Gate 对齐：G0 冻结组合和边界；G1 先完成 `BUILD01/02`、`LINK01–0
 | 系统 push 升 P0 | +7–12 | 服务端触发、Firebase/凭据、channel、通知 SLA、真机 |
 | D1 加密草稿 | +4–7 | 隐私/备份/TTL/密钥/清理批准，AC19B/C/D |
 | reaction 写入 | +2–4 | AC23 权限/计数/幂等/回滚合同 |
-| HTTPS App Links | +2–4 | 域名所有权、association 文件、未安装 Web 降级 |
+| HTTPS App Links / LINK04 升 P0 | +2–4（总计 36–59） | 域名所有权、`assetlinks.json`、package/签名证书、路径白名单、未安装 Web 降级 |
 | 独立仓库/SDK 路线 | 初始 +10–20，另计长期同步 | 私有制品、许可、版本治理、BUILD03；需整体重估 |
 
 如果 MUL-9202 先进入 main 或 SHA 改变，触发 `REG03`、七字段/评论/回复/附件/Chat Stop/38 项完整重映射与全量重估，不能在上表中静默替换基线。
 
-### 必须先满足的依赖
+### G0 与 G1 不跨级
 
-- 获批唯一 SHA、repo、P0 组合及 D0/D1；Android application id、variants、schemes、min/target API；
-- 固定 HTTPS backend、测试账户/角色、附件限制与 fixture；
-- 服务端触发、幂等、冲突和 unknown-result 查询合同；
-- Pixel 与至少一台其他 OEM 设备；
-- G3 才需要 signing/Play 凭据；push 升级才需要 Firebase/后端/通知 SLA；App Links 升级才需要域名所有权。
+G0 未关闭前只完成源码核实、配置取值和方案签核；**不得开始 G1 构建、联调或把风险验证写成可先执行项**。G0 关闭后才按顺序执行 BUILD/LINK/REG。发布签名/Play 凭据仍只在 G3 使用，但若选择 App Links，G0/G1 需要获批 package 对应的签名证书指纹来建立域名关联，不能拿发布私钥本身做附件。
 
-## 10. 待用户确认的最小选择
+#### G0-A：只需用户/工程所有者确认的决策
+
+| 决策 | 当前推荐 | 决策人 | 关闭方式 |
+|---|---|---|---|
+| baseline / repo | main `9cb59ba…` + monorepo `apps/mobile` | 工程所有者 | 记录完整 SHA 与仓库批准 |
+| 首发范围 | 任务协作 P0；Chat/push/reaction 默认 P1 | 产品所有者 | 在 38 项矩阵标注升级项 |
+| 草稿 | D0；D1 仅在杀进程恢复为硬需求时升级 | 产品 + 隐私所有者 | D0/D1 签核；D1 再批 TTL/备份/清理 |
+| 分享入口 | 现有 HTTPS 必须入 App 则 A/App Links；否则 B/custom scheme | 产品 + 域名所有者 | 选择 §8 的 A 或 B，不再新增第三套入口 |
+
+#### G0-B：实施配置冻结表
+
+“已核实”仅表示源码/版本库值存在，不表示 Android 实测通过。待补值按负责人和获取方式关闭，不回抛为新的产品范围问题。
+
+| 配置项 | 已核实值 | 待补项 | 负责人 | 获取 / 关闭方式 |
+|---|---|---|---|---|
+| 基线与 mobile 根 | SHA `9cb59ba…`；`apps/mobile` | 工程所有者批准记录 | 工程所有者 | Git SHA + 签核 |
+| Expo / RN / Router | Expo `~57.0.26`、RN `0.86.3`、Router `~57.0.24` | 无；变更即 REG03 | RD | `apps/mobile/package.json` + lockfile |
+| 方案与矩阵 | 任务 P0、D0；38 unique IDs = 30 P0 + 4 P1 + 3 conditional + 1 G3 | App Links 若升级则改为 31/3/3/1 | 产品/BA + QA | 选择 §8 后更新矩阵优先级，总数保持 38 |
+| URL scheme | `multica` | dev/staging/prod 是否共用及冲突策略 | RD + 发布所有者 | `app.config.ts` 生成配置审查 |
+| Android package / variants | 源码未配置 `android.package`；仅名称有 dev/staging/prod 分支 | 三个唯一 package、可并存/替换策略 | 发布所有者提值，RD 落配置 | 组织反向域名批准 + `expo config --type public` 产物 |
+| min / target / compile API | 未显式固定 | 三个整数及设备最低版本 | RD 提案，工程所有者批准 | Expo 57 支持矩阵 + Play 要求 + prebuild Gradle 核对 |
+| Web share base | prod `https://multica.ai`；staging `https://multica-app.copilothub.ai` | dev 值、尾斜线规范、精确 Issue/Comment path | Web/DevOps | 已跟踪 env + 部署配置 + URL fixture |
+| API / WS | prod `https://api.multica.ai`；staging `https://multica-api.copilothub.ai`；WS 由 API `http→ws` + `/ws` 派生 | 获批测试环境、上传同源/异源规则 | Backend/DevOps | env、服务端路由与脱敏握手记录 |
+| App Links（仅 A） | 当前无 `intentFilters`/association | host/path allowlist、`assetlinks.json`、package + cert SHA-256 | 域名/发布所有者，RD 接入 | 域名部署记录 + `adb pm get-app-links`/验证器 |
+| custom scheme（A/B 均测） | `multica` | 精确 URL grammar、恶意参数白名单、合法父栈 | RD + 安全/产品 | route contract 测试集 + LINK01–03 签核 |
+| 设备矩阵 | Compact/Medium/Expanded 与 Pixel + 第二 OEM 原则 | 精确机型、API、导航模式 | QA | 实验室库存 + 测试计划 |
+| 角色/附件/写入合同 | 源码路径存在 | 账号角色 fixture、附件上限、mention/Agent 副作用提示、idempotency/conflict/unknown 查询合同 | Backend + BA + QA | API 合同、种子账号、fixture 清单与服务端写计数 |
+
+#### G1 执行前提（G0 关闭后获取）
+
+| 前提 | 已核实 | 待补 / 验证 | 负责人 |
+|---|---|---|---|
+| 工具链 | repo `.nvmrc` / CI 固定 Node 22；packageManager `pnpm@10.28.2`; CI 已有 mobile typecheck/lint/test | JDK/Android SDK/NDK/Gradle 兼容组合；本轮环境 Node 24 且无 pnpm/`ANDROID_HOME`，不能作为 BUILD01 证据 | RD / DevOps |
+| 后端联通 | tracked prod/staging base 存在 | 固定非生产测试环境、证书、API/upload/WS Android OS 记录 | Backend/DevOps |
+| 测试身份 | 未核实 | owner/member/read-only/revoked、跨空间、过期登录账号 | QA / Backend |
+| 测试资产 | 设计 token、route contract、38 项矩阵已定义 | 附件 fixtures、外部 URL 集、写计数、设备与录屏模板 | QA |
+
+只有上述 G0-A 决策与 G0-B 必填配置冻结后，才进入 2–8 号工作包；G1 前提缺失导致 BUILD/LINK/REG 失败时记录为阻塞，不回头改写已确认产品范围。
+
+## 11. 本轮缺陷逐项修改证据
+
+| QA 缺陷 | 修改证据 | 当前验证边界 |
+|---|---|---|
+| G0/G1 冲突 | §10 明确 G0 未关闭不得启动 G1；分为决策、配置冻结、执行前提三层 | 文档一致性检查，未运行构建 |
+| 分享链接来源不清 | §8 落到固定 SHA 的两个源码位置、实际 URL 公式和缺失 Android 配置；给 A/B 两个闭合选项 | 源码静态核实；未验证域名 association |
+| 28 组笔误 | 更正为对比度表 **27 行**；不改变任一数值 | 27 行独立复算；静态色值，不是 Android 像素取样 |
+| placeholder 低对比 | 原型新增显式 `--placeholder`，浅/深分别等于用途化 secondary，理论为 6.430107105739 / 8.993393124578（输入 surface） | Chrome 计算样式检查 + 截图；Android 待测 |
+| Retry 约 44×40 | 原型改为最小 48×48 CSS 单位，状态行允许增高 | DOM 几何检查；Android 仍须 48dp 实测 |
+| dirty 未演示 | comment 非空离开 Issue 触发 alertdialog；Stay 保留输入，Discard 才导航 | 浏览器键盘脚本验证；进程死亡仍不恢复（D0） |
+| 三类 overflow 同菜单 | Inbox、Issue、Comment 各有独立 action model 和标题 | 浏览器逐入口检查；原生 adapter 待实现 |
+| Delete 仅 toast | Issue/Comment delete 先开两按钮确认；Cancel 零写入，Delete 原型只记录模拟结果 | 原型不发 API；设备写计数待 G2 |
+| modal 焦点泄漏/不回焦 | Tab/Shift+Tab 循环、Escape 关闭、关闭后回到 opener；tabs 支持方向键/Home/End | 浏览器键盘自动检查；TalkBack 待设备 |
+
+## 12. 待用户确认的最小选择
 
 1. **工程组合**：推荐 `main@9cb59...` + monorepo `apps/mobile`；若坚持独立仓库，接受初始 +10–20 人日、BUILD03 和长期同步治理。若等待 MUL-9202，则接受 `REG03` 重映射和重新估算。
-2. **草稿边界**：推荐 D0（同进程、最低隐私负担）；若杀进程恢复是硬需求，升级 D1 并批准 24h TTL、加密、备份/清理政策与 +4–7 人日。
-3. **P1 是否升级**：默认不升级 Chat/push/reaction/App Links；每项可独立叠加，但必须接受 §9 的代价和对应 AC/LINK 依赖。
+2. **草稿边界与可选能力**：推荐任务协作 P0 + D0；Chat、push、reaction、D1 分别按 §10 增量选择。
+3. **分享入口**：现有 HTTPS 必须自动入 App，选择 A 并把 LINK04 升 P0（总计 36–59）；否则选择 B，明确 HTTPS 继续落 Web、custom scheme 只服务显式入口。
 
-未得到这些批准前，可以继续做 G1 风险验证和原型评审，但不得把推荐项写成用户已确认范围，也不得进入签名或发布。
+未得到这三项批准及 §10 G0 配置冻结前，只继续原型/文档复核；**不得启动 G1 构建或联调**，也不得进入签名或发布。
