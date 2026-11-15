@@ -15,3 +15,8 @@ val InkDark = Color(0xFFF1F3F7)
 val MutedDark = Color(0xFFB9C0CC)
 val ActionDark = Color(0xFFA9C7FF)
 val SignalDark = Color(0xFFFFC176)
+
+val StatusLayerLight = Color(0xFFF0F2F5)
+val DividerLight = Color(0xFFD9DEE7)
+val StatusLayerDark = Color(0xFF111318)
+val DividerDark = Color(0xFF3A404C)

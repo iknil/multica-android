@@ -16,6 +16,8 @@ private val LightColors = lightColorScheme(
     surface = SurfaceLight,
     onSurface = InkLight,
     secondary = SignalLight,
+    surfaceVariant = StatusLayerLight,
+    outlineVariant = DividerLight,
 )
 
 private val DarkColors = darkColorScheme(
@@ -26,6 +28,8 @@ private val DarkColors = darkColorScheme(
     surface = SurfaceDark,
     onSurface = InkDark,
     secondary = SignalDark,
+    surfaceVariant = StatusLayerDark,
+    outlineVariant = DividerDark,
 )
 
 @Composable
