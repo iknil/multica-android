@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,8 +49,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -172,6 +176,7 @@ private fun LoginScreen(
     }
     var code by rememberSaveable(state.codeSent) { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     val primaryActionIndex = 1 +
         (if (fixtureMode) 1 else 0) +
         1 +
@@ -181,8 +186,12 @@ private fun LoginScreen(
 
     // codeSent inserts controls below the fold. Move the real clickable node fully into the
     // viewport instead of relying on its nominal 48dp size (a clipped node has a smaller hit box).
-    LaunchedEffect(state.codeSent, primaryActionIndex) {
-        if (state.codeSent) listState.scrollToItem(primaryActionIndex)
+    LaunchedEffect(state.codeSent, primaryActionIndex, imeBottom) {
+        if (state.codeSent) {
+            // Wait for restored list state and any IME inset change before resolving clipping.
+            withFrameNanos { }
+            listState.scrollToItem(primaryActionIndex)
+        }
     }
 
     LazyColumn(
@@ -427,7 +436,7 @@ private fun IssueDetailScreen(
 ) {
     BackHandler(onBack = onBack)
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("issue_detail_list"),
         state = rememberLazyListState(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),

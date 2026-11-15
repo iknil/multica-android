@@ -10,7 +10,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertTrue
@@ -57,14 +57,13 @@ class FoldableStateRegressionTest {
         }
         compose.onNodeWithText("Verify Android session recovery").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodes(hasText("Comments and activity")).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("created this task")).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("updated the task"))
+        compose.onNodeWithTag("issue_detail_list").performScrollToIndex(9)
 
         // Second recreation represents wide -> narrow and must retain detail plus its list position.
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Verify Android session recovery").assertIsDisplayed()
-        compose.onNodeWithText("updated the task").assertIsDisplayed()
+        compose.onNodeWithText("updated priority to high").assertIsDisplayed()
 
         compose.activityRule.scenario.onActivity {
             it.onBackPressedDispatcher.onBackPressed()
