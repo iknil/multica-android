@@ -207,7 +207,7 @@ private fun LoginScreen(
     // survives. Re-establish it after the replacement window is laid out. Keyboard display is
     // still a best-effort request: Android may suppress it for background or hardware-keyboard
     // windows, or after an explicit user dismissal.
-    LaunchedEffect(state.codeSent, restoreOtpFocus) {
+    LaunchedEffect(state.codeSent, restoreOtpFocus, imeBottom) {
         if (state.codeSent && restoreOtpFocus) {
             // A LazyColumn may restore with the OTP item outside its composed viewport.
             listState.scrollToItem(otpInputIndex)

@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.FileInputStream
 import org.junit.Assert.assertTrue
@@ -89,7 +91,18 @@ class FoldableStateRegressionTest {
         compose.onNodeWithTag("login_otp_input")
             .assertTextContains("123456")
             .assertIsFocused()
+        compose.waitUntil(timeoutMillis = 10_000) { isImeVisible() }
+        assertTrue("IME did not become visible after the configuration change", isImeVisible())
         assertPrimaryActionFullyVisible(requireNinetySixPixels)
+    }
+
+    private fun isImeVisible(): Boolean {
+        var visible = false
+        compose.activityRule.scenario.onActivity { activity ->
+            visible = ViewCompat.getRootWindowInsets(activity.window.decorView)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        return visible
     }
 
     private fun setDisplaySize(size: String) {
