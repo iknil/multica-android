@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly DEFAULT_IMAGE='redroid/redroid@sha256:3c7f9450188226bf8042c0159b9b38abe2106f1ceb0dfa45fae1cbc6409cd9bb'
+readonly OWNER_LABEL='com.multica.redroid.verify.owner'
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/verify-redroid-arm64.sh [IMAGE@sha256:DIGEST]
+
+Pulls a digest-pinned linux/arm64 image, performs two bounded cold boots,
+and always removes only containers carrying this run's ownership label.
+
+Environment:
+  BOOT_TIMEOUT_SECONDS  Per-boot timeout, 30..900 (default: 240)
+  COLD_BOOT_RUNS        Number of fresh-container boots, 1..5 (default: 2)
+  EVIDENCE_ROOT         Parent for mode-0700 evidence directory (default: pwd)
+
+The script binds ADB to a Docker-assigned 127.0.0.1 port and uses a
+privileged container. Run only on an isolated local validation host.
+Evidence may contain device/package/network details; review before sharing.
+USAGE
+}
+
+if [[ ${1:-} == '--help' || ${1:-} == '-h' ]]; then
+  usage
+  exit 0
+fi
+if (( $# > 1 )); then
+  usage >&2
+  exit 64
+fi
+
+IMAGE=${1:-$DEFAULT_IMAGE}
+BOOT_TIMEOUT_SECONDS=${BOOT_TIMEOUT_SECONDS:-240}
+COLD_BOOT_RUNS=${COLD_BOOT_RUNS:-2}
+EVIDENCE_ROOT=${EVIDENCE_ROOT:-$PWD}
+
+[[ $IMAGE =~ ^redroid/redroid@sha256:[0-9a-f]{64}$ ]] || {
+  echo 'ERROR: image must be redroid/redroid pinned by a full sha256 digest' >&2
+  exit 64
+}
+[[ $BOOT_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] &&
+  (( BOOT_TIMEOUT_SECONDS >= 30 && BOOT_TIMEOUT_SECONDS <= 900 )) || {
+  echo 'ERROR: BOOT_TIMEOUT_SECONDS must be an integer from 30 to 900' >&2
+  exit 64
+}
+[[ $COLD_BOOT_RUNS =~ ^[0-9]+$ ]] &&
+  (( COLD_BOOT_RUNS >= 1 && COLD_BOOT_RUNS <= 5 )) || {
+  echo 'ERROR: COLD_BOOT_RUNS must be an integer from 1 to 5' >&2
+  exit 64
+}
+[[ -d $EVIDENCE_ROOT && -w $EVIDENCE_ROOT ]] || {
+  echo "ERROR: EVIDENCE_ROOT is not a writable directory: $EVIDENCE_ROOT" >&2
+  exit 73
+}
+
+for command in adb docker timeout; do
+  command -v "$command" >/dev/null || {
+    echo "ERROR: required command not found: $command" >&2
+    exit 69
+  }
+done
+
+docker info >/dev/null
+
+random_id=$(tr -d '-' </proc/sys/kernel/random/uuid)
+[[ $random_id =~ ^[0-9a-f]{32}$ ]] || {
+  echo 'ERROR: failed to obtain a high-entropy run id' >&2
+  exit 70
+}
+readonly RUN_ID=$random_id
+readonly OWNER_VALUE="redroid-arm64-$RUN_ID"
+readonly EVIDENCE_DIR="$EVIDENCE_ROOT/redroid-evidence-$RUN_ID"
+mkdir -m 0700 "$EVIDENCE_DIR"
+printf '%s\n' "$IMAGE" >"$EVIDENCE_DIR/requested-image.txt"
+
+cid=''
+container_name=''
+serial=''
+
+owns_container() {
+  local actual_owner
+  [[ -n $cid ]] || return 1
+  actual_owner=$(docker inspect --format "{{ index .Config.Labels \"$OWNER_LABEL\" }}" "$cid" 2>/dev/null) || return 1
+  [[ $actual_owner == "$OWNER_VALUE" ]]
+}
+
+cleanup_container() {
+  if [[ -n $serial ]]; then
+    timeout 5s adb disconnect "$serial" >/dev/null 2>&1 || true
+    serial=''
+  fi
+  if [[ -n $cid ]] && docker inspect "$cid" >/dev/null 2>&1; then
+    if owns_container; then
+      docker rm -f "$cid" >/dev/null
+    else
+      echo "WARNING: refusing to remove container $cid: ownership label mismatch" >&2
+      return 1
+    fi
+  fi
+  cid=''
+  container_name=''
+}
+
+on_exit() {
+  local rc=$?
+  trap - EXIT INT TERM
+  if ! cleanup_container; then
+    echo 'WARNING: automatic cleanup was refused; inspect the cid above manually' >&2
+    (( rc == 0 )) && rc=1
+  fi
+  exit "$rc"
+}
+
+on_signal() {
+  local rc=$1
+  trap - EXIT INT TERM
+  cleanup_container || echo 'WARNING: signal cleanup was refused; inspect the cid above manually' >&2
+  exit "$rc"
+}
+
+trap on_exit EXIT
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
+
+capture_evidence() {
+  local run_dir=$1
+  mkdir -p "$run_dir"
+  date --iso-8601=seconds >"$run_dir/captured-at.txt" 2>/dev/null || true
+  if [[ -n $cid ]] && docker inspect "$cid" >/dev/null 2>&1; then
+    docker inspect "$cid" >"$run_dir/docker-inspect.json" 2>"$run_dir/docker-inspect.stderr" || true
+    docker logs --timestamps "$cid" >"$run_dir/docker.log" 2>&1 || true
+    timeout 15s docker exec "$cid" getprop >"$run_dir/docker-getprop.txt" 2>&1 || true
+    timeout 20s docker exec "$cid" logcat -b all -d -v threadtime >"$run_dir/docker-logcat.txt" 2>&1 || true
+    timeout 10s docker exec "$cid" dmesg >"$run_dir/docker-dmesg.txt" 2>&1 || true
+    timeout 10s docker exec "$cid" ps -A >"$run_dir/docker-ps.txt" 2>&1 || true
+  fi
+  if [[ -n $serial ]]; then
+    timeout 5s adb -s "$serial" get-state >"$run_dir/adb-state.txt" 2>&1 || true
+    timeout 15s adb -s "$serial" shell getprop >"$run_dir/adb-getprop.txt" 2>&1 || true
+    timeout 20s adb -s "$serial" logcat -b all -d -v threadtime >"$run_dir/adb-logcat.txt" 2>&1 || true
+  fi
+  # Host dmesg commonly requires extra permission; preserve the error as evidence.
+  timeout 10s dmesg --ctime >"$run_dir/host-dmesg.txt" 2>&1 || true
+}
+
+verify_properties() {
+  local bootanim zygote abilist machine
+  bootanim=$(timeout 5s adb -s "$serial" shell getprop init.svc.bootanim | tr -d '\r')
+  zygote=$(timeout 5s adb -s "$serial" shell getprop ro.zygote | tr -d '\r')
+  abilist=$(timeout 5s adb -s "$serial" shell getprop ro.product.cpu.abilist | tr -d '\r')
+  machine=$(timeout 5s adb -s "$serial" shell uname -m | tr -d '\r')
+
+  [[ $zygote == zygote64 ]] || { echo "ERROR: ro.zygote=$zygote" >&2; return 1; }
+  [[ $abilist == arm64-v8a ]] || { echo "ERROR: ro.product.cpu.abilist=$abilist" >&2; return 1; }
+  [[ $machine == aarch64 ]] || { echo "ERROR: uname -m=$machine" >&2; return 1; }
+  # Empty is valid when boot animation is disabled; any active/non-stopped value is not.
+  [[ -z $bootanim || $bootanim == stopped ]] || {
+    echo "ERROR: init.svc.bootanim=$bootanim" >&2
+    return 1
+  }
+  timeout 15s adb -s "$serial" shell pm list packages >/dev/null
+  timeout 5s adb -s "$serial" shell pidof system_server >/dev/null
+}
+
+wait_for_boot() {
+  local deadline state boot_completed
+  deadline=$(( $(date +%s) + BOOT_TIMEOUT_SECONDS ))
+  while (( $(date +%s) < deadline )); do
+    state=$(timeout 5s adb -s "$serial" get-state 2>/dev/null || true)
+    if [[ $state == device ]]; then
+      boot_completed=$(timeout 5s adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+      if [[ $boot_completed == 1 ]] && verify_properties; then
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  echo "ERROR: boot did not satisfy all gates within ${BOOT_TIMEOUT_SECONDS}s (last ADB state: ${state:-unavailable})" >&2
+  return 1
+}
+
+echo "Pulling unverified candidate by digest: $IMAGE"
+docker pull --platform linux/arm64 "$IMAGE"
+architecture=$(docker image inspect "$IMAGE" --format '{{.Architecture}}')
+[[ $architecture == arm64 ]] || {
+  echo "ERROR: pulled image architecture is $architecture, expected arm64" >&2
+  exit 1
+}
+docker image inspect "$IMAGE" >"$EVIDENCE_DIR/image-inspect.json"
+
+for (( run=1; run<=COLD_BOOT_RUNS; run++ )); do
+  run_dir="$EVIDENCE_DIR/cold-boot-$run"
+  mkdir -m 0700 "$run_dir"
+  container_name="redroid-arm64-${RUN_ID:0:20}-$run"
+
+  cid=$(docker run -d --name "$container_name" \
+    --label "$OWNER_LABEL=$OWNER_VALUE" \
+    --privileged \
+    -p 127.0.0.1::5555 \
+    "$IMAGE" androidboot.use_memfd=true)
+  [[ $cid =~ ^[0-9a-f]{12,64}$ ]] || {
+    echo "ERROR: docker returned an invalid cid: $cid" >&2
+    capture_evidence "$run_dir"
+    exit 1
+  }
+  owns_container || {
+    echo "ERROR: ownership label missing from container $cid" >&2
+    capture_evidence "$run_dir"
+    exit 1
+  }
+
+  port=''
+  for _ in {1..15}; do
+    port=$(docker port "$cid" 5555/tcp 2>/dev/null | awk -F: '$1 == "127.0.0.1" {print $NF; exit}')
+    [[ $port =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) && break
+    port=''
+    sleep 1
+  done
+  [[ $port =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) || {
+    echo 'ERROR: Docker did not publish a valid loopback ADB port' >&2
+    capture_evidence "$run_dir"
+    exit 1
+  }
+  serial="127.0.0.1:$port"
+  printf '%s\n' "$cid" >"$run_dir/cid.txt"
+  printf '%s\n' "$serial" >"$run_dir/adb-serial.txt"
+
+  timeout 10s adb connect "$serial" >"$run_dir/adb-connect.txt" 2>&1 || true
+  if ! wait_for_boot; then
+    capture_evidence "$run_dir"
+    echo "Evidence captured in: $run_dir" >&2
+    exit 1
+  fi
+
+  capture_evidence "$run_dir"
+  printf 'Cold boot %d/%d passed all automated gates.\n' "$run" "$COLD_BOOT_RUNS"
+  cleanup_container
+  sleep 2
+done
+
+echo "PASS: $COLD_BOOT_RUNS fresh-container cold boots passed."
+echo "Evidence: $EVIDENCE_DIR"
+echo 'This validates only the redroid software runtime; it does not validate product behavior, hardware-backed KeyStore, TEE, or StrongBox.'

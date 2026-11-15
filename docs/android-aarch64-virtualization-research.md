@@ -9,7 +9,7 @@
 
 **推荐顺序：**
 
-1. 使用官方 Android 12 ARM64-only 镜像，按 `linux/arm64` manifest digest 固定并验证；这是改动最小、最直接移除 ARM32 路径的方案。
+1. 将官方 Android 12 ARM64-only 镜像作为**待冷启动验证的首选方向**，按 `linux/arm64` manifest digest 固定；它尚不是已验证可用的运行基线。
 2. 若镜像供应链或长期可复现性要求更高，从固定源码版本构建 `redroid_arm64_only-userdebug`。
 3. 仅在 Android 12 64-only 仍无法启动时，评估较新 redroid 的对应 `*_64only` 镜像；升级必须另做 API、系统行为和 APK 回归。
 4. 修补 ARM32 compat 只作为定位手段，不作为默认交付路线。
@@ -46,24 +46,7 @@
 rootfs: 同时存在 lib/ 与 lib64/，含 32 位 ART/runtime 库
 ```
 
-最小复现使用临时 privileged 容器、随机 loopback ADB 端口，不挂载持久卷；退出后删除容器：
-
-```bash
-name="redroid-rd-$(date +%s)"
-cid=""
-cleanup() {
-  adb disconnect '127.0.0.1:'"${port:-0}" >/dev/null 2>&1 || true
-  test -z "$cid" || docker rm -f "$cid" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
-
-cid=$(docker run -d --name "$name" --privileged \
-  -p 127.0.0.1::5555 \
-  redroid/redroid@sha256:52332b2d74f337982d5ac281a8020ec297fb1ea05cbdcdaaa9c19a2065ae1adc \
-  androidboot.use_memfd=true)
-port=$(docker port "$name" 5555/tcp | sed 's/.*://')
-adb connect "127.0.0.1:$port"
-```
+最小复现使用临时 privileged 容器、Docker 随机分配的 loopback ADB 端口且不挂载持久卷；本轮容器已按实际 cid 删除。该历史复现命令不再作为用户操作入口，避免弱容器名、无界等待和按名称误删；后续统一使用下文 `scripts/verify-redroid-arm64.sh`。
 
 5–35 秒内观察值：
 
@@ -87,7 +70,7 @@ AudioService.<init>
 
 QA 还将 zygote/ABI 临时收窄到 ARM64 做诊断：主 zygote 与 `system_server` 能启动，但镜像里的 ARM32 audio/media/OMX HAL 仍失败，因此仅改 `ro.zygote` 或 ABI 属性不是修复。诊断镜像已删除。
 
-## 首选方案：固定官方 ARM64-only 镜像
+## 首选待验证方向：固定官方 ARM64-only 镜像
 
 redroid 官方文档当前列出并在 quick start 使用 `redroid/redroid:12.0.0_64only-latest`，部署说明也明确指出部分 ARM 平台只支持 `aarch64`，此时需要 64-only 镜像。2026-11-15 查询到的 Docker Hub 元数据：
 
@@ -99,27 +82,26 @@ redroid 官方文档当前列出并在 quick start 使用 `redroid/redroid:12.0.
 | arm64 压缩大小 | 605,791,428 bytes |
 | Docker Hub 更新时间 | 2024-05-28T05:11:11Z |
 
-### 可复制验证命令
+### 用户可执行验证脚本
 
-不要直接运行浮动 `latest`；先验证 manifest 与架构，再按平台 manifest digest 拉取：
+不要直接运行浮动 `latest`。仓库提供 `scripts/verify-redroid-arm64.sh`，默认固定上表 `linux/arm64` manifest digest：
 
 ```bash
-IMAGE='redroid/redroid@sha256:3c7f9450188226bf8042c0159b9b38abe2106f1ceb0dfa45fae1cbc6409cd9bb'
-docker buildx imagetools inspect \
-  redroid/redroid@sha256:a6c464bbedcf1dcb67dbf91f329fbb19bee5b50631f0ca6bda6ed7c41b0e64e2
-docker pull --platform linux/arm64 "$IMAGE"
-docker image inspect "$IMAGE" --format '{{.Architecture}} {{json .RepoDigests}}'
-
-name="redroid-arm64only-$(date +%s)"
-docker run -d --name "$name" --privileged \
-  -p 127.0.0.1::5555 \
-  "$IMAGE" androidboot.use_memfd=true
-port=$(docker port "$name" 5555/tcp | sed 's/.*://')
-adb connect "127.0.0.1:$port"
-adb -s "127.0.0.1:$port" wait-for-device
+scripts/verify-redroid-arm64.sh --help
+BOOT_TIMEOUT_SECONDS=240 COLD_BOOT_RUNS=2 \
+  scripts/verify-redroid-arm64.sh
 ```
 
-随后执行“成功判据”一节。当前环境两次访问 `registry-1.docker.io` 均返回 `EOF`，因此只完成了 registry 元数据核验，**没有宣称该 64-only 镜像已拉取或启动成功**。网络恢复后应原样重跑；若平台 digest 拉取受客户端限制，可改用上表 index digest并保留 `--platform linux/arm64`，拉取后必须核对实际 RepoDigest/architecture。
+脚本的安全与可复现约束：
+
+- `set -euo pipefail`，只接受 `redroid/redroid@sha256:<完整散列>`；拉取后核对 image architecture 为 `arm64`；
+- 每次使用 UUID 派生的高熵 run id、容器名和 ownership label，ADB 由 Docker 随机映射到 `127.0.0.1`；
+- 每轮 boot 等待默认最多 240 秒（允许 30–900 秒），所有单次 ADB/Docker 诊断也有 timeout；
+- 默认新建并删除两个容器完成两次冷启动；`trap` 只会删除实际 cid 且 ownership label 与本次 run id 一致的容器，label 不匹配时拒绝删除；
+- 失败时即使 ADB 为 offline，也从 Docker 侧保存 `inspect`、logs、容器内 `getprop`、`logcat`、`dmesg`、`ps`，并保留 ADB 与宿主 dmesg 的可用结果；
+- 证据目录权限为 `0700` 且被 Git 忽略；内容可能含设备、package 或网络信息，分享前必须脱敏。
+
+脚本使用 `--privileged`，只应在隔离的本地验证宿主执行；它不挂持久卷，也不公开 ADB。当前环境多次访问 `registry-1.docker.io` 均返回 `EOF`，因此目前只完成 registry 元数据核验，**没有完成 64-only 镜像 pull、内容检查或冷启动，也不宣称运行可用**。registry 恢复后运行脚本，只有两次冷启动和全部自动门槛均通过，才能把该 digest 升格为 redroid 验证基线。若平台 manifest digest 不能被客户端直接拉取，应暂停并核对客户端/registry 行为，不得静默改用浮动 tag。
 
 ## 可复取源码构建
 
@@ -172,50 +154,26 @@ m
 
 不推荐 Anbox：项目已不再是优先维护路线。也不把“官方 Android Emulator”列为当前 aarch64 Linux 宿主首选，除非先取得 Google 对该 host architecture 的当前、明确支持证据；不能把 ARM64 guest system image 与 ARM64 host emulator 支持混为一谈。
 
-## 成功判据
+## 成功判据与失败取证
 
-单次看到 ADB device 不算成功。以下条件必须全部满足：
+单次看到 ADB `device` 不算成功。脚本在有界等待内要求：
 
-```bash
-serial="127.0.0.1:$port"
-adb -s "$serial" wait-for-device
-test "$(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r')" = 1
-test "$(adb -s "$serial" shell getprop init.svc.bootanim | tr -d '\r')" = stopped
-test "$(adb -s "$serial" shell getprop ro.zygote | tr -d '\r')" = zygote64
-test "$(adb -s "$serial" shell getprop ro.product.cpu.abilist | tr -d '\r')" = arm64-v8a
-test "$(adb -s "$serial" shell uname -m | tr -d '\r')" = aarch64
-adb -s "$serial" shell pm list packages >/dev/null
-```
+- `sys.boot_completed=1`；
+- `ro.zygote=zygote64`、`ro.product.cpu.abilist=arm64-v8a`、`uname -m=aarch64`；
+- Package Manager 可列出 packages，且 `system_server` 存活；
+- `init.svc.bootanim` 为空（禁用动画时允许）或 `stopped`；其他值失败，不再强制要求该属性必须存在；
+- 删除首个任务容器后，新建第二个容器并再次通过全部门槛。
 
-还需人工/日志确认：
+自动门槛通过后仍需人工检查证据中无 zygote、linker 或 `system_server` fatal restart loop，并另行安装/启动固定 debug APK。KeyStore token 写入、恢复、清理和登录闭环仍需在可用设备执行；redroid boot 通过不能替代硬件 TEE/StrongBox 或产品验收。
 
-- 无 zygote、linker 或 system_server fatal restart loop；
-- debug APK 可安装并启动；
-- 删除任务容器后再次冷启动仍通过；
-- ADB 只绑定 `127.0.0.1`，不对公网或局域网开放；
-- KeyStore token 写入、恢复、清理和登录闭环另在可用设备上执行，不因 redroid boot 成功而记为通过。
+ADB offline 时不能只依赖 `adb logcat`。脚本会先基于实际 cid 执行 Docker 侧 `inspect`/logs，并尝试容器内 `getprop`、`logcat -b all -d`、`dmesg` 和 `ps -A`；随后再保留有界 ADB 结果和宿主 dmesg（缺权限的错误也保留）。
 
-若失败，在 ADB 尚在线时立即采集：
 
-```bash
-adb -s "$serial" logcat -b all -d > redroid-logcat.txt
-adb -s "$serial" shell dmesg > redroid-guest-dmesg.txt || true
-docker inspect "$name" > redroid-container-inspect.json
-dmesg --ctime | tail -n 500 > redroid-host-dmesg-tail.txt
-```
+## 清理与方案撤回（不是功能回退）
 
-日志交付前应检查 token、账号、网络地址等敏感内容。
+优先并存验证，不覆盖旧 tag，不删除宿主已有镜像。脚本的 EXIT/INT/TERM trap 依据实际 cid 和本次随机 ownership label 双重校验，只删除本次创建且归属匹配的容器；不创建或删除持久卷。归属不匹配时脚本拒绝自动删除并报告 cid，避免误删并发任务资源。
 
-## 回退与清理
-
-优先并存验证，不覆盖旧 tag，不删除宿主已有镜像。失败时只清理本次创建的资源：
-
-```bash
-adb disconnect "127.0.0.1:$port" || true
-docker rm -f "$name"
-```
-
-若使用数据卷，必须给任务卷加唯一名称并确认归属后再删除。旧失败镜像仍按 digest 保留，便于回归和对照。切换到较新 redroid 后若出现回归，直接停止新容器并用已记录的 Android 12 64-only digest 重建，不移动浮动 tag。
+这里的“撤回”仅表示停止并删除候选容器。旧 mixed-ABI 镜像已知不能 boot complete，只能保留作故障对照，**不是可用功能回退**；registry 不可用且 64-only 镜像未缓存时，也不存在“按该 digest 立即重建”的回退能力。若后续升级到较新 redroid 出现回归，只有本机已缓存且此前完成两次冷启动门禁的固定 digest 才能作为运行基线恢复；否则转 ARM64 真机或其他已验证环境。
 
 ## 本轮测试边界
 
