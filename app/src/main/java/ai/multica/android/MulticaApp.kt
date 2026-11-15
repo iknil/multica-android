@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -39,9 +43,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -61,50 +67,68 @@ import kotlinx.coroutines.launch
 fun MulticaApp(controller: AppController, fixtureMode: Boolean) {
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val screenStateHolder = rememberSaveableStateHolder()
     Scaffold(
         topBar = { AppHeader(fixtureMode) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (val current = state) {
-                AppState.RestoringSession -> FullPageLoading("Restoring secure session")
-                is AppState.Login -> LoginScreen(
-                    state = current,
-                    fixtureMode = fixtureMode,
-                    onScenario = controller::selectFixtureScenario,
-                    onSendCode = { scope.launch { controller.sendCode(it) } },
-                    onVerify = { scope.launch { controller.verifyCode(it) } },
-                )
-                is AppState.RestoreFailure -> RestoreFailureScreen(
-                    current,
-                    onRetry = { scope.launch { controller.retryRestore() } },
-                    onLogout = { scope.launch { controller.logout() } },
-                )
-                is AppState.WorkspaceSelection -> WorkspaceScreen(
-                    current,
-                    onWorkspace = { scope.launch { controller.selectWorkspace(it) } },
-                    onRetry = { scope.launch { controller.retryWorkspaces() } },
-                    onLogout = { scope.launch { controller.logout() } },
-                )
-                is AppState.IssueList -> IssueListScreen(
-                    current,
-                    onIssue = { scope.launch { controller.openIssue(it) } },
-                    onRetry = { scope.launch { controller.retryIssues() } },
-                    onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
-                    onLogout = { scope.launch { controller.logout() } },
-                )
-                is AppState.IssueDetailView -> IssueDetailScreen(
-                    current,
-                    onBack = controller::backToIssues,
-                    onRetryDetail = { scope.launch { controller.retryIssueDetail() } },
-                    onRetryTimeline = { scope.launch { controller.retryTimeline() } },
-                    onLoadMore = controller::loadMoreTimeline,
-                    onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
-                    onLogout = { scope.launch { controller.logout() } },
-                )
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            val current = state
+            Box(Modifier.widthIn(max = 840.dp).fillMaxSize()) {
+                screenStateHolder.SaveableStateProvider(screenKey(current)) {
+                    when (current) {
+                        AppState.RestoringSession -> FullPageLoading("Restoring secure session")
+                        is AppState.Login -> LoginScreen(
+                            state = current,
+                            fixtureMode = fixtureMode,
+                            onScenario = controller::selectFixtureScenario,
+                            onSendCode = { scope.launch { controller.sendCode(it) } },
+                            onVerify = { scope.launch { controller.verifyCode(it) } },
+                        )
+                        is AppState.RestoreFailure -> RestoreFailureScreen(
+                            current,
+                            onRetry = { scope.launch { controller.retryRestore() } },
+                            onLogout = { scope.launch { controller.logout() } },
+                        )
+                        is AppState.WorkspaceSelection -> WorkspaceScreen(
+                            current,
+                            onWorkspace = { scope.launch { controller.selectWorkspace(it) } },
+                            onRetry = { scope.launch { controller.retryWorkspaces() } },
+                            onLogout = { scope.launch { controller.logout() } },
+                        )
+                        is AppState.IssueList -> IssueListScreen(
+                            current,
+                            onIssue = { scope.launch { controller.openIssue(it) } },
+                            onRetry = { scope.launch { controller.retryIssues() } },
+                            onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
+                            onLogout = { scope.launch { controller.logout() } },
+                        )
+                        is AppState.IssueDetailView -> IssueDetailScreen(
+                            current,
+                            onBack = controller::backToIssues,
+                            onRetryDetail = { scope.launch { controller.retryIssueDetail() } },
+                            onRetryTimeline = { scope.launch { controller.retryTimeline() } },
+                            onLoadMore = controller::loadMoreTimeline,
+                            onChangeWorkspace = { scope.launch { controller.chooseAnotherWorkspace() } },
+                            onLogout = { scope.launch { controller.logout() } },
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+private fun screenKey(state: AppState): String = when (state) {
+    AppState.RestoringSession -> "restoring"
+    is AppState.Login -> "login"
+    is AppState.RestoreFailure -> "restore-failure"
+    is AppState.WorkspaceSelection -> "workspaces"
+    is AppState.IssueList -> "issues:${state.workspace.id}"
+    is AppState.IssueDetailView -> "issue:${state.workspace.id}:${state.summary.id}"
 }
 
 @Composable
@@ -145,8 +169,10 @@ private fun LoginScreen(
         mutableStateOf(state.email.ifBlank { if (fixtureMode) LocalFixtureGateway.FIXTURE_EMAIL else "" })
     }
     var code by rememberSaveable(state.codeSent) { mutableStateOf("") }
+    val listState = rememberLazyListState()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -213,7 +239,11 @@ private fun LoginScreen(
             Button(
                 onClick = { if (state.codeSent) onVerify(code) else onSendCode(email) },
                 enabled = !state.loading && email.isNotBlank() && (!state.codeSent || code.isNotBlank()),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("login_primary_action"),
             ) {
                 if (state.loading) {
                     CircularProgressIndicator(
@@ -267,6 +297,7 @@ private fun WorkspaceScreen(
             onSecondary = onLogout,
         )
         else -> LazyColumn(
+            state = rememberLazyListState(),
             contentPadding = PaddingValues(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -320,6 +351,7 @@ private fun IssueListScreen(
             onSecondary = onChangeWorkspace,
         )
         else -> LazyColumn(
+            state = rememberLazyListState(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             item {
@@ -378,6 +410,7 @@ private fun IssueDetailScreen(
     BackHandler(onBack = onBack)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = rememberLazyListState(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
