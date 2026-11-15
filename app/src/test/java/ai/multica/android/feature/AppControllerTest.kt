@@ -525,6 +525,11 @@ class AppControllerTest {
                 User("google-user", "Google User", "google@example.com"),
             )
         }
+
+        override suspend fun getWorkspaces(token: String): List<Workspace> {
+            assertEquals("multica-session", token)
+            return listOf(Workspace("workspace-1", "Workspace", "workspace", "WS"))
+        }
     }
 
     private object ConnectedPromptGateway : MulticaGateway {
