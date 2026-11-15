@@ -45,14 +45,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -175,8 +180,12 @@ private fun LoginScreen(
         mutableStateOf(state.email.ifBlank { if (fixtureMode) LocalFixtureGateway.FIXTURE_EMAIL else "" })
     }
     var code by rememberSaveable(state.codeSent) { mutableStateOf("") }
+    var restoreOtpFocus by rememberSaveable(state.codeSent) { mutableStateOf(false) }
+    val otpFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val otpInputIndex = 1 + (if (fixtureMode) 1 else 0) + 1
     val primaryActionIndex = 1 +
         (if (fixtureMode) 1 else 0) +
         1 +
@@ -191,6 +200,20 @@ private fun LoginScreen(
             // Wait for restored list state and any IME inset change before resolving clipping.
             withFrameNanos { }
             listState.scrollToItem(primaryActionIndex)
+        }
+    }
+
+    // A fold/unfold can destroy the text input connection even though saveable OTP state
+    // survives. Re-establish it after the replacement window is laid out. Keyboard display is
+    // still a best-effort request: Android may suppress it for background or hardware-keyboard
+    // windows, or after an explicit user dismissal.
+    LaunchedEffect(state.codeSent, restoreOtpFocus) {
+        if (state.codeSent && restoreOtpFocus) {
+            // A LazyColumn may restore with the OTP item outside its composed viewport.
+            listState.scrollToItem(otpInputIndex)
+            withFrameNanos { }
+            otpFocusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
 
@@ -251,7 +274,13 @@ private fun LoginScreen(
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(otpFocusRequester)
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) restoreOtpFocus = true
+                        }
+                        .testTag("login_otp_input"),
                     label = { Text("One-time code") },
                     supportingText = if (fixtureMode) ({ Text("Local fixture code: ${LocalFixtureGateway.FIXTURE_CODE}") }) else null,
                     singleLine = true,

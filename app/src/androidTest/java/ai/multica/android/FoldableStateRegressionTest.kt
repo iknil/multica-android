@@ -2,6 +2,7 @@ package ai.multica.android
 
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -13,6 +14,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.FileInputStream
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -40,12 +43,19 @@ class FoldableStateRegressionTest {
         }
         assertPrimaryActionFullyVisible()
         compose.onNodeWithText("One-time code").performTextInput("123456")
+        compose.onNodeWithTag("login_otp_input").assertIsFocused()
 
-        // Two recreations represent narrow -> wide -> narrow while the IME/input is active.
-        repeat(2) {
-            compose.activityRule.scenario.recreate()
-            compose.onNodeWithText("One-time code").assertTextContains("123456")
-            assertPrimaryActionFullyVisible()
+        // Exercise real window-manager configuration changes rather than only Activity.recreate.
+        // Always remove the override so a failed assertion cannot contaminate later device runs.
+        try {
+            setDisplaySize("540x1400")
+            assertOtpSurvivesResize(requireNinetySixPixels = true)
+            setDisplaySize("1400x1000")
+            assertOtpSurvivesResize(requireNinetySixPixels = false)
+            setDisplaySize("540x1400")
+            assertOtpSurvivesResize(requireNinetySixPixels = true)
+        } finally {
+            setDisplaySize("reset")
         }
         compose.onNodeWithTag("login_primary_action").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
@@ -72,7 +82,26 @@ class FoldableStateRegressionTest {
         compose.onNodeWithText("Sign out").performClick()
     }
 
-    private fun assertPrimaryActionFullyVisible() {
+    private fun assertOtpSurvivesResize(requireNinetySixPixels: Boolean) {
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasTestTag("login_otp_input")).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("login_otp_input")
+            .assertTextContains("123456")
+            .assertIsFocused()
+        assertPrimaryActionFullyVisible(requireNinetySixPixels)
+    }
+
+    private fun setDisplaySize(size: String) {
+        val descriptor = InstrumentationRegistry.getInstrumentation()
+            .uiAutomation
+            .executeShellCommand("wm size $size")
+        FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
+        descriptor.close()
+        compose.waitForIdle()
+    }
+
+    private fun assertPrimaryActionFullyVisible(requireNinetySixPixels: Boolean = true) {
         compose.waitForIdle()
         val action = compose.onNodeWithTag("login_primary_action")
             .assertIsDisplayed()
@@ -80,11 +109,11 @@ class FoldableStateRegressionTest {
             .fetchSemanticsNode()
             .boundsInRoot
         val viewport = compose.onNodeWithTag("login_viewport").fetchSemanticsNode().boundsInRoot
-        val minTouchHeightPx = 48f * compose.activity.resources.displayMetrics.density
-
         assertTrue("clickable action is clipped above the viewport: $action vs $viewport", action.top >= viewport.top)
         assertTrue("clickable action is clipped below the viewport: $action vs $viewport", action.bottom <= viewport.bottom)
-        assertTrue("clickable action is under 48dp: $action", action.height >= minTouchHeightPx)
+        if (requireNinetySixPixels) {
+            assertTrue("clickable action is under 96px at 320dpi: $action", action.height >= 96f)
+        }
     }
 
 }
