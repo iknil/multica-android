@@ -46,6 +46,6 @@ A connected build is opt-in and fails configuration unless all public endpoints 
   -Pmultica.googleServerClientId=PUBLIC_WEB_CLIENT_ID
 ```
 
-`googleServerClientId` is the public OAuth server/Web client identifier, not a secret. Never add client secrets, private keys, tokens, OTPs, or test-account credentials to this repository. Connected builds never fall back to local fixture data. Release tasks additionally reject fixture mode, non-HTTPS APIs, and loopback APIs. Run `./scripts/test-build-mode-gates.sh` for the negative gate regression.
+`googleServerClientId` is the public OAuth server/Web client identifier, not a secret. Never add client secrets, private keys, tokens, OTPs, or test-account credentials to this repository. Connected builds never fall back to local fixture data. All connected builds require HTTPS; there is no cleartext local-test exception. The manifest also disables cleartext traffic and runtime configuration revalidates HTTPS. Release tasks additionally reject fixture mode and syntactic loopback APIs, including all canonical `127/8`, IPv6 loopback, and IPv4-mapped/compatible forms without DNS lookup. Run `./scripts/test-build-mode-gates.sh` for positive and negative gate regression.
 
 The Android client expects isolated native endpoints described in `docs/android-first-real-slice.md`; they are not deployed by this repository. The existing Web authorization-code endpoint remains unchanged and an ID token must never be submitted to it.

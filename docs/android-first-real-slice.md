@@ -15,10 +15,12 @@
 | 条件 | 构建/运行行为 | 证据 |
 |---|---|---|
 | 默认 demo | `fixtureMode=true`，仅构造 `LocalFixtureGateway`，不会显示 Google 登录 | `MainActivity.kt`、`AppConfigTest.fixtureBuildKeepsSafeInvalidDefaultWithoutOAuthConfiguration` |
-| connected | 必须显式 `fixtureMode=false`、绝对 HTTP(S) API、非 `.invalid` host、非空公开 server client ID | `app/build.gradle.kts`、`AppConfig.kt`、`scripts/test-build-mode-gates.sh` |
-| release | 必须 connected、HTTPS、非 loopback | `app/build.gradle.kts` 的 release task gate 与负测 |
+| connected | 必须显式 `fixtureMode=false`、绝对 HTTPS API、非 `.invalid` host、非空公开 server client ID | `app/build.gradle.kts`、`AppConfig.kt`、`scripts/test-build-mode-gates.sh` |
+| release | 必须 connected、HTTPS、非 loopback（完整 `127/8`、IPv6 loopback 与 IPv4-mapped/compatible 均按字面量拒绝） | `app/build.gradle.kts` 的 release task gate 与负测 |
 | 运行时 | connected 只构造 `HttpMulticaGateway`；不捕获网络错误后降级 fixture | `MainActivity.kt` |
 | fixture Google | fixture gateway 明确拒绝 native Google 方法，控制器也拒绝调用 provider | `LocalFixtureGateway.kt`、`AppControllerTest.fixtureBuildCannotUseGoogleLogin` |
+
+connected 构建不保留本地 HTTP 例外：公网与 loopback HTTP 均在 Gradle 配置期失败；非规范 IPv4 整数、短写、前导零和无效 IPv6 字面量同样 fail closed。loopback 判断只解析 URL 字面量，不做 DNS 查询。运行期 `AppConfig` 再次要求 HTTPS，Manifest 设置 `android:usesCleartextTraffic="false"`，因此即使绕过构建入口也不会允许明文 HTTP。需要本地服务时必须提供受信任的 HTTPS 测试入口，本轮没有 `local-test` 明文模式。
 
 `googleServerClientId` 是可公开 client identifier，不是 secret；client secret、私钥、token、OTP、测试账号不得进入仓库或评论。
 

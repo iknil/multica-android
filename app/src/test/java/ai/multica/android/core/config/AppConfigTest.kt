@@ -14,6 +14,7 @@ class AppConfigTest {
     @Test
     fun rejectsMissingHostAndBlankVersion() {
         assertThrows(IllegalArgumentException::class.java) { AppConfig("/api", "1.0.0") }
+        assertThrows(IllegalArgumentException::class.java) { AppConfig("http://127.0.0.1", "1.0.0") }
         assertThrows(IllegalArgumentException::class.java) { AppConfig("https://api.example.com", "") }
     }
 

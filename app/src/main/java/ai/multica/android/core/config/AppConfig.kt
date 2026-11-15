@@ -10,8 +10,8 @@ data class AppConfig(
 ) {
     init {
         val uri = runCatching { URI(apiBaseUrl) }.getOrNull()
-        require(uri != null && uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
-            "apiBaseUrl must be an absolute HTTP(S) URL"
+        require(uri != null && uri.scheme == "https" && !uri.host.isNullOrBlank()) {
+            "apiBaseUrl must be an absolute HTTPS URL"
         }
         require(clientVersion.isNotBlank()) { "clientVersion must not be blank" }
         if (!fixtureMode) {
