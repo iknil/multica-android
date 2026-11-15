@@ -12,9 +12,11 @@ Pulls a digest-pinned linux/arm64 image, performs two bounded cold boots,
 and always removes only containers carrying this run's ownership label.
 
 Environment:
-  BOOT_TIMEOUT_SECONDS  Per-boot timeout, 30..900 (default: 240)
-  COLD_BOOT_RUNS        Number of fresh-container boots, 1..5 (default: 2)
-  EVIDENCE_ROOT         Parent for mode-0700 evidence directory (default: pwd)
+  BOOT_TIMEOUT_SECONDS         Per-boot timeout, 30..900 (default: 240)
+  COLD_BOOT_RUNS               Fresh-container boots, 1..5 (default: 2)
+  DOCKER_TIMEOUT_SECONDS       Docker operation timeout, 1..300 (default: 30)
+  DOCKER_PULL_TIMEOUT_SECONDS  Docker pull timeout, 1..3600 (default: 900)
+  EVIDENCE_ROOT                Parent for mode-0700 evidence directory (default: pwd)
 
 The script binds ADB to a Docker-assigned 127.0.0.1 port and uses a
 privileged container. Run only on an isolated local validation host.
@@ -34,6 +36,8 @@ fi
 IMAGE=${1:-$DEFAULT_IMAGE}
 BOOT_TIMEOUT_SECONDS=${BOOT_TIMEOUT_SECONDS:-240}
 COLD_BOOT_RUNS=${COLD_BOOT_RUNS:-2}
+DOCKER_TIMEOUT_SECONDS=${DOCKER_TIMEOUT_SECONDS:-30}
+DOCKER_PULL_TIMEOUT_SECONDS=${DOCKER_PULL_TIMEOUT_SECONDS:-900}
 EVIDENCE_ROOT=${EVIDENCE_ROOT:-$PWD}
 
 [[ $IMAGE =~ ^redroid/redroid@sha256:[0-9a-f]{64}$ ]] || {
@@ -50,6 +54,16 @@ EVIDENCE_ROOT=${EVIDENCE_ROOT:-$PWD}
   echo 'ERROR: COLD_BOOT_RUNS must be an integer from 1 to 5' >&2
   exit 64
 }
+[[ $DOCKER_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] &&
+  (( DOCKER_TIMEOUT_SECONDS >= 1 && DOCKER_TIMEOUT_SECONDS <= 300 )) || {
+  echo 'ERROR: DOCKER_TIMEOUT_SECONDS must be an integer from 1 to 300' >&2
+  exit 64
+}
+[[ $DOCKER_PULL_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] &&
+  (( DOCKER_PULL_TIMEOUT_SECONDS >= 1 && DOCKER_PULL_TIMEOUT_SECONDS <= 3600 )) || {
+  echo 'ERROR: DOCKER_PULL_TIMEOUT_SECONDS must be an integer from 1 to 3600' >&2
+  exit 64
+}
 [[ -d $EVIDENCE_ROOT && -w $EVIDENCE_ROOT ]] || {
   echo "ERROR: EVIDENCE_ROOT is not a writable directory: $EVIDENCE_ROOT" >&2
   exit 73
@@ -62,7 +76,15 @@ for command in adb docker timeout; do
   }
 done
 
-docker info >/dev/null
+docker_cmd() {
+  timeout --foreground "${DOCKER_TIMEOUT_SECONDS}s" docker "$@"
+}
+
+docker_pull_cmd() {
+  timeout --foreground "${DOCKER_PULL_TIMEOUT_SECONDS}s" docker "$@"
+}
+
+docker_cmd info >/dev/null
 
 random_id=$(tr -d '-' </proc/sys/kernel/random/uuid)
 [[ $random_id =~ ^[0-9a-f]{32}$ ]] || {
@@ -82,7 +104,7 @@ serial=''
 owns_container() {
   local actual_owner
   [[ -n $cid ]] || return 1
-  actual_owner=$(docker inspect --format "{{ index .Config.Labels \"$OWNER_LABEL\" }}" "$cid" 2>/dev/null) || return 1
+  actual_owner=$(docker_cmd inspect --format "{{ index .Config.Labels \"$OWNER_LABEL\" }}" "$cid" 2>/dev/null) || return 1
   [[ $actual_owner == "$OWNER_VALUE" ]]
 }
 
@@ -91,11 +113,17 @@ cleanup_container() {
     timeout 5s adb disconnect "$serial" >/dev/null 2>&1 || true
     serial=''
   fi
-  if [[ -n $cid ]] && docker inspect "$cid" >/dev/null 2>&1; then
-    if owns_container; then
-      docker rm -f "$cid" >/dev/null
-    else
-      echo "WARNING: refusing to remove container $cid: ownership label mismatch" >&2
+  if [[ -n $cid ]]; then
+    if ! docker_cmd inspect "$cid" >/dev/null 2>&1; then
+      echo "WARNING: could not inspect container $cid within the Docker timeout; refusing unverified cleanup" >&2
+      return 1
+    fi
+    if ! owns_container; then
+      echo "WARNING: refusing to remove container $cid: ownership label mismatch or inspection timeout" >&2
+      return 1
+    fi
+    if ! docker_cmd rm -f "$cid" >/dev/null; then
+      echo "WARNING: timed out or failed while removing owned container $cid" >&2
       return 1
     fi
   fi
@@ -128,13 +156,13 @@ capture_evidence() {
   local run_dir=$1
   mkdir -p "$run_dir"
   date --iso-8601=seconds >"$run_dir/captured-at.txt" 2>/dev/null || true
-  if [[ -n $cid ]] && docker inspect "$cid" >/dev/null 2>&1; then
-    docker inspect "$cid" >"$run_dir/docker-inspect.json" 2>"$run_dir/docker-inspect.stderr" || true
-    docker logs --timestamps "$cid" >"$run_dir/docker.log" 2>&1 || true
-    timeout 15s docker exec "$cid" getprop >"$run_dir/docker-getprop.txt" 2>&1 || true
-    timeout 20s docker exec "$cid" logcat -b all -d -v threadtime >"$run_dir/docker-logcat.txt" 2>&1 || true
-    timeout 10s docker exec "$cid" dmesg >"$run_dir/docker-dmesg.txt" 2>&1 || true
-    timeout 10s docker exec "$cid" ps -A >"$run_dir/docker-ps.txt" 2>&1 || true
+  if [[ -n $cid ]] && docker_cmd inspect "$cid" >/dev/null 2>&1; then
+    docker_cmd inspect "$cid" >"$run_dir/docker-inspect.json" 2>"$run_dir/docker-inspect.stderr" || true
+    docker_cmd logs --timestamps "$cid" >"$run_dir/docker.log" 2>&1 || true
+    docker_cmd exec "$cid" getprop >"$run_dir/docker-getprop.txt" 2>&1 || true
+    docker_cmd exec "$cid" logcat -b all -d -v threadtime >"$run_dir/docker-logcat.txt" 2>&1 || true
+    docker_cmd exec "$cid" dmesg >"$run_dir/docker-dmesg.txt" 2>&1 || true
+    docker_cmd exec "$cid" ps -A >"$run_dir/docker-ps.txt" 2>&1 || true
   fi
   if [[ -n $serial ]]; then
     timeout 5s adb -s "$serial" get-state >"$run_dir/adb-state.txt" 2>&1 || true
@@ -160,8 +188,14 @@ verify_properties() {
     echo "ERROR: init.svc.bootanim=$bootanim" >&2
     return 1
   }
-  timeout 15s adb -s "$serial" shell pm list packages >/dev/null
-  timeout 5s adb -s "$serial" shell pidof system_server >/dev/null
+  if ! timeout 15s adb -s "$serial" shell pm list packages >/dev/null; then
+    echo 'ERROR: Package Manager is unavailable' >&2
+    return 1
+  fi
+  if ! timeout 5s adb -s "$serial" shell pidof system_server >/dev/null; then
+    echo 'ERROR: system_server is unavailable' >&2
+    return 1
+  fi
 }
 
 wait_for_boot() {
@@ -182,29 +216,49 @@ wait_for_boot() {
 }
 
 echo "Pulling unverified candidate by digest: $IMAGE"
-docker pull --platform linux/arm64 "$IMAGE"
-architecture=$(docker image inspect "$IMAGE" --format '{{.Architecture}}')
+docker_pull_cmd pull --platform linux/arm64 "$IMAGE"
+architecture=$(docker_cmd image inspect "$IMAGE" --format '{{.Architecture}}')
 [[ $architecture == arm64 ]] || {
   echo "ERROR: pulled image architecture is $architecture, expected arm64" >&2
   exit 1
 }
-docker image inspect "$IMAGE" >"$EVIDENCE_DIR/image-inspect.json"
+docker_cmd image inspect "$IMAGE" >"$EVIDENCE_DIR/image-inspect.json"
 
 for (( run=1; run<=COLD_BOOT_RUNS; run++ )); do
   run_dir="$EVIDENCE_DIR/cold-boot-$run"
   mkdir -m 0700 "$run_dir"
   container_name="redroid-arm64-${RUN_ID:0:20}-$run"
 
-  cid=$(docker run -d --name "$container_name" \
+  cidfile="$run_dir/docker.cid"
+  run_output=''
+  run_rc=0
+  run_output=$(docker_cmd run -d --name "$container_name" \
+    --cidfile "$cidfile" \
     --label "$OWNER_LABEL=$OWNER_VALUE" \
     --privileged \
     -p 127.0.0.1::5555 \
-    "$IMAGE" androidboot.use_memfd=true)
-  [[ $cid =~ ^[0-9a-f]{12,64}$ ]] || {
-    echo "ERROR: docker returned an invalid cid: $cid" >&2
+    "$IMAGE" androidboot.use_memfd=true) || run_rc=$?
+  cid=$run_output
+  if [[ ! $cid =~ ^[0-9a-f]{12,64}$ ]] && [[ -r $cidfile ]]; then
+    read -r cid <"$cidfile" || true
+  fi
+  if [[ ! $cid =~ ^[0-9a-f]{12,64}$ ]]; then
+    # docker run may time out after the daemon created the container but before
+    # stdout reached us. Recover only this run's high-entropy name + label.
+    recovered=$(docker_cmd container inspect \
+      --format "{{.Id}} {{index .Config.Labels \"$OWNER_LABEL\"}}" \
+      "$container_name" 2>/dev/null || true)
+    recovered_cid=${recovered%% *}
+    recovered_owner=${recovered#* }
+    if [[ $recovered_cid =~ ^[0-9a-f]{12,64}$ ]] && [[ $recovered_owner == "$OWNER_VALUE" ]]; then
+      cid=$recovered_cid
+    fi
+  fi
+  if (( run_rc != 0 )) || [[ ! $cid =~ ^[0-9a-f]{12,64}$ ]]; then
+    echo "ERROR: docker run failed or timed out (status $run_rc); recovered cid: ${cid:-none}" >&2
     capture_evidence "$run_dir"
     exit 1
-  }
+  fi
   owns_container || {
     echo "ERROR: ownership label missing from container $cid" >&2
     capture_evidence "$run_dir"
@@ -213,7 +267,7 @@ for (( run=1; run<=COLD_BOOT_RUNS; run++ )); do
 
   port=''
   for _ in {1..15}; do
-    port=$(docker port "$cid" 5555/tcp 2>/dev/null | awk -F: '$1 == "127.0.0.1" {print $NF; exit}')
+    port=$(docker_cmd port "$cid" 5555/tcp 2>/dev/null | awk -F: '$1 == "127.0.0.1" {print $NF; exit}')
     [[ $port =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )) && break
     port=''
     sleep 1

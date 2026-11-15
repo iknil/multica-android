@@ -96,9 +96,9 @@ BOOT_TIMEOUT_SECONDS=240 COLD_BOOT_RUNS=2 \
 
 - `set -euo pipefail`，只接受 `redroid/redroid@sha256:<完整散列>`；拉取后核对 image architecture 为 `arm64`；
 - 每次使用 UUID 派生的高熵 run id、容器名和 ownership label，ADB 由 Docker 随机映射到 `127.0.0.1`；
-- 每轮 boot 等待默认最多 240 秒（允许 30–900 秒），所有单次 ADB/Docker 诊断也有 timeout；
-- 默认新建并删除两个容器完成两次冷启动；`trap` 只会删除实际 cid 且 ownership label 与本次 run id 一致的容器，label 不匹配时拒绝删除；
-- 失败时即使 ADB 为 offline，也从 Docker 侧保存 `inspect`、logs、容器内 `getprop`、`logcat`、`dmesg`、`ps`，并保留 ADB 与宿主 dmesg 的可用结果；
+- 每轮 boot 等待默认最多 240 秒（允许 30–900 秒）；Docker `info`/`inspect`/`logs`/`run`/`rm`/`port`/`exec` 等操作统一受 `DOCKER_TIMEOUT_SECONDS` 限制（默认 30 秒，允许 1–300 秒），pull 单独受 `DOCKER_PULL_TIMEOUT_SECONDS` 限制（默认 900 秒，允许 1–3600 秒），ADB 与宿主诊断同样有界；
+- 默认新建并删除两个容器完成两次冷启动；`docker run` 使用本轮私有 cidfile，若客户端超时则先从 cidfile、再从高熵容器名与 ownership label 恢复 daemon 实际创建的 cid；`trap` 只删除实际 cid 且 label 与本次 run id 一致的容器，无法在 Docker timeout 内核验归属、label 不匹配或删除超时时均显式失败而不误删；
+- 失败时即使 ADB 为 offline，也会在各自 timeout 内尽力从 Docker 侧保存 `inspect`、logs、容器内 `getprop`、`logcat`、`dmesg`、`ps`，并保留 ADB 与宿主 dmesg 的可用结果；某项 Docker 取证阻塞只产生缺项，不会让脚本无界等待；
 - 证据目录权限为 `0700` 且被 Git 忽略；内容可能含设备、package 或网络信息，分享前必须脱敏。
 
 脚本使用 `--privileged`，只应在隔离的本地验证宿主执行；它不挂持久卷，也不公开 ADB。当前环境多次访问 `registry-1.docker.io` 均返回 `EOF`，因此目前只完成 registry 元数据核验，**没有完成 64-only 镜像 pull、内容检查或冷启动，也不宣称运行可用**。registry 恢复后运行脚本，只有两次冷启动和全部自动门槛均通过，才能把该 digest 升格为 redroid 验证基线。若平台 manifest digest 不能被客户端直接拉取，应暂停并核对客户端/registry 行为，不得静默改用浮动 tag。
@@ -160,7 +160,7 @@ m
 
 - `sys.boot_completed=1`；
 - `ro.zygote=zygote64`、`ro.product.cpu.abilist=arm64-v8a`、`uname -m=aarch64`；
-- Package Manager 可列出 packages，且 `system_server` 存活；
+- Package Manager 可列出 packages，且 `system_server` 存活；两项均为显式硬门槛，任一命令失败或超时都返回失败，绝不进入 PASS；
 - `init.svc.bootanim` 为空（禁用动画时允许）或 `stopped`；其他值失败，不再强制要求该属性必须存在；
 - 删除首个任务容器后，新建第二个容器并再次通过全部门槛。
 
