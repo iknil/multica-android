@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -38,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -170,13 +172,29 @@ private fun LoginScreen(
     }
     var code by rememberSaveable(state.codeSent) { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val primaryActionIndex = 1 +
+        (if (fixtureMode) 1 else 0) +
+        1 +
+        (if (state.codeSent) 1 else 0) +
+        (if (state.notice != null) 1 else 0) +
+        (if (state.error != null) 1 else 0)
+
+    // codeSent inserts controls below the fold. Move the real clickable node fully into the
+    // viewport instead of relying on its nominal 48dp size (a clipped node has a smaller hit box).
+    LaunchedEffect(state.codeSent, primaryActionIndex) {
+        if (state.codeSent) listState.scrollToItem(primaryActionIndex)
+    }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .testTag("login_viewport"),
         state = listState,
-        contentPadding = PaddingValues(24.dp),
+        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
+        item(key = "login_heading") {
             Text("Sign in", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Text(
                 if (fixtureMode) "Safe local flow — no OTP or service request is sent."
@@ -186,7 +204,7 @@ private fun LoginScreen(
             )
         }
         if (fixtureMode) {
-            item {
+            item(key = "fixture_scenario") {
                 Text("Fixture scenario", style = MaterialTheme.typography.titleSmall)
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -208,7 +226,7 @@ private fun LoginScreen(
                 )
             }
         }
-        item {
+        item(key = "login_email") {
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -220,7 +238,7 @@ private fun LoginScreen(
             )
         }
         if (state.codeSent) {
-            item {
+            item(key = "login_code") {
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
@@ -233,9 +251,9 @@ private fun LoginScreen(
                 )
             }
         }
-        state.notice?.let { message -> item { MessagePanel(message, isError = false) } }
-        state.error?.let { message -> item { MessagePanel(message, isError = true) } }
-        item {
+        state.notice?.let { message -> item(key = "login_notice") { MessagePanel(message, isError = false) } }
+        state.error?.let { message -> item(key = "login_error") { MessagePanel(message, isError = true) } }
+        item(key = "login_primary_action") {
             Button(
                 onClick = { if (state.codeSent) onVerify(code) else onSendCode(email) },
                 enabled = !state.loading && email.isNotBlank() && (!state.codeSent || code.isNotBlank()),

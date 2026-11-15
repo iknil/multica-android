@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -37,11 +38,15 @@ class FoldableStateRegressionTest {
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodes(hasText("One-time code")).fetchSemanticsNodes().isNotEmpty()
         }
+        assertPrimaryActionFullyVisible()
         compose.onNodeWithText("One-time code").performTextInput("123456")
 
-        // First recreation represents the narrow -> wide transition while the IME/input is active.
-        compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("One-time code").assertTextContains("123456")
+        // Two recreations represent narrow -> wide -> narrow while the IME/input is active.
+        repeat(2) {
+            compose.activityRule.scenario.recreate()
+            compose.onNodeWithText("One-time code").assertTextContains("123456")
+            assertPrimaryActionFullyVisible()
+        }
         compose.onNodeWithTag("login_primary_action").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodes(hasText("Android delivery")).fetchSemanticsNodes().isNotEmpty()
@@ -67,4 +72,20 @@ class FoldableStateRegressionTest {
         compose.onNodeWithText("3 tasks").assertIsDisplayed()
         compose.onNodeWithText("Sign out").performClick()
     }
+
+    private fun assertPrimaryActionFullyVisible() {
+        compose.waitForIdle()
+        val action = compose.onNodeWithTag("login_primary_action")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val viewport = compose.onNodeWithTag("login_viewport").fetchSemanticsNode().boundsInRoot
+        val minTouchHeightPx = 48f * compose.activity.resources.displayMetrics.density
+
+        assertTrue("clickable action is clipped above the viewport: $action vs $viewport", action.top >= viewport.top)
+        assertTrue("clickable action is clipped below the viewport: $action vs $viewport", action.bottom <= viewport.bottom)
+        assertTrue("clickable action is under 48dp: $action", action.height >= minTouchHeightPx)
+    }
+
 }
