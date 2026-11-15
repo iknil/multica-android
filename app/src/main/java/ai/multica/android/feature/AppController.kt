@@ -1,5 +1,7 @@
 package ai.multica.android.feature
 
+import ai.multica.android.core.auth.GoogleCredentialException
+import ai.multica.android.core.auth.GoogleCredentialProvider
 import ai.multica.android.core.auth.SessionStore
 import ai.multica.android.core.network.FixtureScenario
 import ai.multica.android.core.network.GatewayException
@@ -18,6 +20,8 @@ import kotlinx.coroutines.sync.withLock
 class AppController(
     private val gateway: MulticaGateway,
     private val sessionStore: SessionStore,
+    private val googleCredentialProvider: GoogleCredentialProvider? = null,
+    private val googleServerClientId: String = "",
 ) {
     private val mutableState = MutableStateFlow<AppState>(AppState.RestoringSession)
     private val generation = AtomicLong(0)
@@ -76,20 +80,28 @@ class AppController(
         val request = beginRequest()
         mutableState.value = current.copy(loading = true, error = null)
         try {
-            val session = gateway.verifyCode(current.email, code.trim())
-            val committed = sessionMutationMutex.withLock {
-                if (!isActive(request)) return@withLock false
-                sessionStore.writeToken(session.token)
-                if (!isActive(request)) {
-                    // A logout/401 may invalidate this request while secure storage is suspending.
-                    // Compensate while still serialized so a stale token cannot survive the clear.
-                    runCatching { sessionStore.clearToken() }
-                    return@withLock false
-                }
-                true
-            }
-            if (!committed || !isActive(request)) return
-            loadWorkspaces(session.token, session.user)
+            commitAuthenticatedSession(request, gateway.verifyCode(current.email, code.trim()))
+        } catch (error: Throwable) {
+            ifActive(request) { mutableState.value = current.copy(loading = false, error = error.userMessage()) }
+        }
+    }
+
+    suspend fun signInWithGoogle() {
+        val current = mutableState.value as? AppState.Login ?: return
+        val provider = googleCredentialProvider
+        if (provider == null || googleServerClientId.isBlank() || gateway is LocalFixtureGateway) {
+            mutableState.value = current.copy(error = "Google sign-in is unavailable in this build.")
+            return
+        }
+        val request = beginRequest()
+        mutableState.value = current.copy(loading = true, error = null, notice = null)
+        try {
+            val challenge = gateway.createGoogleAuthChallenge()
+            if (!isActive(request)) return
+            val idToken = provider.getIdToken(googleServerClientId, challenge.nonce)
+            if (!isActive(request)) return
+            val session = gateway.exchangeGoogleIdToken(challenge.attemptId, idToken)
+            commitAuthenticatedSession(request, session)
         } catch (error: Throwable) {
             ifActive(request) { mutableState.value = current.copy(loading = false, error = error.userMessage()) }
         }
@@ -190,6 +202,25 @@ class AppController(
         beginRequest() // Invalidate before the serialized secure-store clear suspends.
         mutableState.value = loginState()
         clearSessionToken()
+        runCatching { googleCredentialProvider?.clearCredentialState() }
+    }
+
+    private suspend fun commitAuthenticatedSession(
+        request: Long,
+        session: ai.multica.android.model.AuthenticatedSession,
+    ) {
+        val committed = sessionMutationMutex.withLock {
+            if (!isActive(request)) return@withLock false
+            sessionStore.writeToken(session.token)
+            if (!isActive(request)) {
+                // A logout/401 may invalidate this request while secure storage is suspending.
+                // Compensate while still serialized so a stale token cannot survive the clear.
+                runCatching { sessionStore.clearToken() }
+                return@withLock false
+            }
+            true
+        }
+        if (committed && isActive(request)) loadWorkspaces(session.token, session.user)
     }
 
     private suspend fun restore(token: String) {
@@ -328,6 +359,11 @@ private fun Throwable.isUnauthorized(): Boolean =
     this is GatewayException && kind == GatewayException.Kind.UNAUTHORIZED
 
 private fun Throwable.userMessage(): String = when (this) {
+    is GoogleCredentialException -> message ?: when (kind) {
+        GoogleCredentialException.Kind.CANCELLED -> "Google sign-in was cancelled."
+        GoogleCredentialException.Kind.UNAVAILABLE -> "Google sign-in is unavailable on this device."
+        GoogleCredentialException.Kind.PROTOCOL -> "The Google credential response could not be read."
+    }
     is GatewayException -> message ?: when (kind) {
         GatewayException.Kind.VALIDATION -> "Check the entered value."
         GatewayException.Kind.UNAUTHORIZED -> "The request was not authorized."

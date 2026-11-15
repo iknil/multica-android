@@ -23,6 +23,8 @@ class ContractTest {
 
     @Test
     fun buildsReadOnlyIssueRoutesWithoutPaginationParameters() {
+        assertEquals("/auth/google/native/challenge", ApiRoutes.GOOGLE_NATIVE_CHALLENGE)
+        assertEquals("/auth/google/native", ApiRoutes.GOOGLE_NATIVE)
         assertEquals("/api/issues/issue-1", ApiRoutes.issue("issue-1"))
         assertEquals("/api/issues/issue-1/timeline", ApiRoutes.timeline("issue-1"))
         assertFalse(ApiRoutes.timeline("issue-1").contains('?'))

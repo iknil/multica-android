@@ -1,6 +1,7 @@
 package ai.multica.android.core.network
 
 import ai.multica.android.model.AuthenticatedSession
+import ai.multica.android.model.GoogleAuthChallenge
 import ai.multica.android.model.IssueSummary
 import ai.multica.android.model.IssueDetail
 import ai.multica.android.model.TimelineItem
@@ -39,6 +40,14 @@ class LocalFixtureGateway(
         failedTimelineTokens.remove(token)
         return AuthenticatedSession(token, fixtureUser(email))
     }
+
+    override suspend fun createGoogleAuthChallenge(): GoogleAuthChallenge =
+        invalid("Real Google sign-in is disabled in fixture mode")
+
+    override suspend fun exchangeGoogleIdToken(
+        attemptId: String,
+        idToken: String,
+    ): AuthenticatedSession = invalid("Real Google sign-in is disabled in fixture mode")
 
     override suspend fun getMe(token: String): User {
         pause()

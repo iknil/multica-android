@@ -48,3 +48,9 @@ data class AuthenticatedSession(
     val token: String,
     val user: User,
 )
+
+
+data class GoogleAuthChallenge(
+    val attemptId: String,
+    val nonce: String,
+)

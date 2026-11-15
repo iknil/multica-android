@@ -11,7 +11,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import ai.multica.android.core.auth.AndroidGoogleCredentialProvider
 import ai.multica.android.core.auth.AndroidKeystoreSessionStore
+import ai.multica.android.core.config.AppConfig
 import ai.multica.android.core.network.ClientMetadata
 import ai.multica.android.core.network.HttpMulticaGateway
 import ai.multica.android.core.network.LocalFixtureGateway
@@ -24,16 +26,29 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 check(modelClass == AppControllerViewModel::class.java)
-                val gateway = if (BuildConfig.FIXTURE_MODE) {
+                val config = AppConfig(
+                    apiBaseUrl = BuildConfig.API_BASE_URL,
+                    clientVersion = BuildConfig.VERSION_NAME,
+                    fixtureMode = BuildConfig.FIXTURE_MODE,
+                    googleServerClientId = BuildConfig.GOOGLE_SERVER_CLIENT_ID,
+                )
+                val gateway = if (config.fixtureMode) {
                     LocalFixtureGateway()
                 } else {
                     HttpMulticaGateway(
-                        baseUrl = BuildConfig.API_BASE_URL,
-                        metadata = ClientMetadata(BuildConfig.VERSION_NAME),
+                        baseUrl = config.apiBaseUrl,
+                        metadata = ClientMetadata(config.clientVersion),
                     )
                 }
                 return AppControllerViewModel(
-                    AppController(gateway, AndroidKeystoreSessionStore(applicationContext)),
+                    AppController(
+                        gateway = gateway,
+                        sessionStore = AndroidKeystoreSessionStore(applicationContext),
+                        googleCredentialProvider = if (config.fixtureMode) null else {
+                            AndroidGoogleCredentialProvider(this@MainActivity)
+                        },
+                        googleServerClientId = config.googleServerClientId,
+                    ),
                 ) as T
             }
         }

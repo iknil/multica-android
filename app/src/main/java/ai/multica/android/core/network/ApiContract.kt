@@ -3,6 +3,8 @@ package ai.multica.android.core.network
 object ApiRoutes {
     const val SEND_CODE = "/auth/send-code"
     const val VERIFY_CODE = "/auth/verify-code"
+    const val GOOGLE_NATIVE_CHALLENGE = "/auth/google/native/challenge"
+    const val GOOGLE_NATIVE = "/auth/google/native"
     const val REFRESH_SESSION = "/api/auth/refresh"
     const val ME = "/api/me"
     const val WORKSPACES = "/api/workspaces"

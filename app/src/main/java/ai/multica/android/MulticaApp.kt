@@ -99,6 +99,7 @@ fun MulticaApp(controller: AppController, fixtureMode: Boolean) {
                             state = current,
                             fixtureMode = fixtureMode,
                             onScenario = controller::selectFixtureScenario,
+                            onGoogle = { scope.launch { controller.signInWithGoogle() } },
                             onSendCode = { scope.launch { controller.sendCode(it) } },
                             onVerify = { scope.launch { controller.verifyCode(it) } },
                         )
@@ -191,6 +192,7 @@ private fun LoginScreen(
     state: AppState.Login,
     fixtureMode: Boolean,
     onScenario: (FixtureScenario) -> Unit,
+    onGoogle: () -> Unit,
     onSendCode: (String) -> Unit,
     onVerify: (String) -> Unit,
 ) {
@@ -203,9 +205,10 @@ private fun LoginScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    val otpInputIndex = 1 + (if (fixtureMode) 1 else 0) + 1
+    val authOptionCount = 1 // fixture selector or Google action
+    val otpInputIndex = 1 + authOptionCount + 1
     val primaryActionIndex = 1 +
-        (if (fixtureMode) 1 else 0) +
+        authOptionCount +
         1 +
         (if (state.codeSent) 1 else 0) +
         (if (state.notice != null) 1 else 0) +
@@ -273,6 +276,25 @@ private fun LoginScreen(
                     state.fixtureScenario.detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            item(key = "google_sign_in") {
+                OutlinedButton(
+                    onClick = onGoogle,
+                    enabled = !state.loading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("google_sign_in"),
+                ) {
+                    Text("Continue with Google")
+                }
+                Text(
+                    "Google authentication uses the approved test service; credentials are not stored by the app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
             }
         }

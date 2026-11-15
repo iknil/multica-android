@@ -21,10 +21,11 @@
 ```bash
 ./gradlew assembleDebug \
   -Pmultica.fixtureMode=false \
-  -Pmultica.apiBaseUrl=https://AUTHORIZED_TEST_HOST
+  -Pmultica.apiBaseUrl=https://AUTHORIZED_TEST_HOST \
+  -Pmultica.googleServerClientId=PUBLIC_WEB_CLIENT_ID
 ```
 
-URL 不是密钥；token、OTP、邮箱和发布凭据不得写入 Gradle 属性文件或仓库。生产示例 `https://api.multica.ai` 与参考源码中的 staging 值均只作静态核对，本轮未自动连接。
+URL 与 OAuth client ID 不是密钥；client secret、私钥、token、OTP、邮箱和发布凭据不得写入 Gradle 属性文件或仓库。生产示例 `https://api.multica.ai` 与参考源码中的 staging 值均只作静态核对，本轮未自动连接。
 
 ## 会话、导航与旧响应隔离
 

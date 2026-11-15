@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,6 +10,32 @@ val configuredApiBaseUrl = providers.gradleProperty("multica.apiBaseUrl")
     .orElse("https://api.example.invalid")
 val configuredFixtureMode = providers.gradleProperty("multica.fixtureMode")
     .orElse("true")
+val configuredGoogleServerClientId = providers.gradleProperty("multica.googleServerClientId")
+    .orElse("")
+
+val fixtureModeValue = configuredFixtureMode.get().also {
+    require(it == "true" || it == "false") { "multica.fixtureMode must be true or false" }
+}.toBoolean()
+val apiUri = runCatching { URI(configuredApiBaseUrl.get()) }.getOrNull()
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+if (!fixtureModeValue) {
+    require(apiUri?.scheme in setOf("http", "https") && !apiUri?.host.isNullOrBlank()) {
+        "Non-fixture builds require an absolute HTTP(S) multica.apiBaseUrl"
+    }
+    require(apiUri?.host?.endsWith(".invalid") == false) {
+        "Non-fixture builds cannot use a .invalid API host"
+    }
+    require(configuredGoogleServerClientId.get().isNotBlank()) {
+        "Non-fixture builds require multica.googleServerClientId"
+    }
+}
+if (releaseRequested) {
+    require(!fixtureModeValue) { "Release builds must set -Pmultica.fixtureMode=false" }
+    require(apiUri?.scheme == "https") { "Release builds require an HTTPS multica.apiBaseUrl" }
+    require(apiUri?.host !in setOf("localhost", "127.0.0.1", "::1")) {
+        "Release builds cannot target a loopback API host"
+    }
+}
 
 android {
     namespace = "ai.multica.android"
@@ -21,7 +49,8 @@ android {
         versionName = "0.1.0-feasibility"
 
         buildConfigField("String", "API_BASE_URL", "\"${configuredApiBaseUrl.get()}\"")
-        buildConfigField("boolean", "FIXTURE_MODE", configuredFixtureMode.get())
+        buildConfigField("boolean", "FIXTURE_MODE", fixtureModeValue.toString())
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"${configuredGoogleServerClientId.get()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -61,6 +90,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.collection)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

@@ -1,5 +1,6 @@
 package ai.multica.android.feature
 
+import ai.multica.android.core.auth.GoogleCredentialProvider
 import ai.multica.android.core.auth.InMemorySessionStore
 import ai.multica.android.core.auth.SessionStore
 import ai.multica.android.core.network.FixtureScenario
@@ -7,6 +8,7 @@ import ai.multica.android.core.network.GatewayException
 import ai.multica.android.core.network.LocalFixtureGateway
 import ai.multica.android.core.network.MulticaGateway
 import ai.multica.android.model.AuthenticatedSession
+import ai.multica.android.model.GoogleAuthChallenge
 import ai.multica.android.model.IssueDetail
 import ai.multica.android.model.IssueSummary
 import ai.multica.android.model.TimelineItem
@@ -23,6 +25,56 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppControllerTest {
+    @Test
+    fun googleLoginUsesServerNoncePersistsOnlyMulticaTokenAndLoadsWorkspaces() = runBlocking {
+        val gateway = RecordingGoogleGateway()
+        val provider = RecordingGoogleCredentialProvider()
+        val store = InMemorySessionStore()
+        val controller = AppController(gateway, store, provider, "server-client")
+        controller.start()
+
+        controller.signInWithGoogle()
+
+        assertEquals("server-client", provider.clientId)
+        assertEquals("nonce-1", provider.nonce)
+        assertEquals("attempt-1", gateway.attemptId)
+        assertEquals("google-id-token", gateway.idToken)
+        assertEquals("multica-session", store.readToken())
+        assertTrue(controller.state.value is AppState.WorkspaceSelection)
+    }
+
+    @Test
+    fun fixtureBuildCannotUseGoogleLogin() = runBlocking {
+        val provider = RecordingGoogleCredentialProvider()
+        val controller = AppController(LocalFixtureGateway(delayMillis = 0), InMemorySessionStore(), provider, "client")
+        controller.start()
+
+        controller.signInWithGoogle()
+
+        assertEquals(0, provider.requestCount)
+        assertNotNull((controller.state.value as AppState.Login).error)
+    }
+
+    @Test
+    fun logoutFencesLateGoogleCredentialAndClearsProviderState() = runBlocking {
+        val gateway = RecordingGoogleGateway()
+        val provider = BlockingGoogleCredentialProvider()
+        val store = InMemorySessionStore()
+        val controller = AppController(gateway, store, provider, "server-client")
+        controller.start()
+        val login = launch { controller.signInWithGoogle() }
+        provider.started.await()
+
+        controller.logout()
+        provider.release.complete(Unit)
+        login.join()
+
+        assertTrue(controller.state.value is AppState.Login)
+        assertNull(store.readToken())
+        assertEquals(0, gateway.exchangeCount)
+        assertEquals(1, provider.clearCount)
+    }
+
     @Test
     fun transitionsLoginWorkspaceAndIssueList() = runBlocking {
         val controller = AppController(LocalFixtureGateway(delayMillis = 0), InMemorySessionStore())
@@ -421,8 +473,65 @@ class AppControllerTest {
     }
 
 
+    private class RecordingGoogleCredentialProvider : GoogleCredentialProvider {
+        var clientId: String? = null
+        var nonce: String? = null
+        var requestCount = 0
+        var clearCount = 0
+
+        override suspend fun getIdToken(serverClientId: String, nonce: String): String {
+            requestCount += 1
+            clientId = serverClientId
+            this.nonce = nonce
+            return "google-id-token"
+        }
+
+        override suspend fun clearCredentialState() {
+            clearCount += 1
+        }
+    }
+
+    private class BlockingGoogleCredentialProvider : GoogleCredentialProvider {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var clearCount = 0
+
+        override suspend fun getIdToken(serverClientId: String, nonce: String): String {
+            started.complete(Unit)
+            release.await()
+            return "late-google-id-token"
+        }
+
+        override suspend fun clearCredentialState() {
+            clearCount += 1
+        }
+    }
+
+    private class RecordingGoogleGateway(
+        private val delegate: LocalFixtureGateway = LocalFixtureGateway(delayMillis = 0),
+    ) : MulticaGateway by delegate {
+        var attemptId: String? = null
+        var idToken: String? = null
+        var exchangeCount = 0
+
+        override suspend fun createGoogleAuthChallenge() = GoogleAuthChallenge("attempt-1", "nonce-1")
+
+        override suspend fun exchangeGoogleIdToken(attemptId: String, idToken: String): AuthenticatedSession {
+            exchangeCount += 1
+            this.attemptId = attemptId
+            this.idToken = idToken
+            return AuthenticatedSession(
+                "multica-session",
+                User("google-user", "Google User", "google@example.com"),
+            )
+        }
+    }
+
     private object ConnectedPromptGateway : MulticaGateway {
         override suspend fun sendCode(email: String) = Unit
+        override suspend fun createGoogleAuthChallenge(): GoogleAuthChallenge = throw UnsupportedOperationException()
+        override suspend fun exchangeGoogleIdToken(attemptId: String, idToken: String): AuthenticatedSession =
+            throw UnsupportedOperationException()
         override suspend fun verifyCode(email: String, code: String) =
             AuthenticatedSession("token", User("id", "name", email))
         override suspend fun getMe(token: String) = User("id", "name", "tester@example.com")
@@ -439,6 +548,9 @@ class AppControllerTest {
 
     private object FailingRestoreGateway : MulticaGateway {
         override suspend fun sendCode(email: String) = Unit
+        override suspend fun createGoogleAuthChallenge(): GoogleAuthChallenge = throw UnsupportedOperationException()
+        override suspend fun exchangeGoogleIdToken(attemptId: String, idToken: String): AuthenticatedSession =
+            throw UnsupportedOperationException()
         override suspend fun verifyCode(email: String, code: String) =
             AuthenticatedSession("token", User("id", "name", email))
         override suspend fun getMe(token: String): User =

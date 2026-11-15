@@ -1,6 +1,7 @@
 package ai.multica.android.core.network
 
 import ai.multica.android.model.AuthenticatedSession
+import ai.multica.android.model.GoogleAuthChallenge
 import ai.multica.android.model.IssueSummary
 import ai.multica.android.model.IssueDetail
 import ai.multica.android.model.TimelineItem
@@ -38,6 +39,35 @@ class HttpMulticaGateway(
         ).asObject()
         val token = json.requiredString("token")
         return AuthenticatedSession(token, json.requiredObject("user").toUser())
+    }
+
+    override suspend fun createGoogleAuthChallenge(): GoogleAuthChallenge {
+        val json = request(
+            ApiRoutes.GOOGLE_NATIVE_CHALLENGE,
+            "POST",
+            body = JSONObject(),
+        ).asObject()
+        return GoogleAuthChallenge(
+            attemptId = json.requiredString("attempt_id"),
+            nonce = json.requiredString("nonce"),
+        )
+    }
+
+    override suspend fun exchangeGoogleIdToken(
+        attemptId: String,
+        idToken: String,
+    ): AuthenticatedSession {
+        val json = request(
+            ApiRoutes.GOOGLE_NATIVE,
+            "POST",
+            body = JSONObject()
+                .put("attempt_id", attemptId)
+                .put("id_token", idToken),
+        ).asObject()
+        return AuthenticatedSession(
+            token = json.requiredString("token"),
+            user = json.requiredObject("user").toUser(),
+        )
     }
 
     override suspend fun getMe(token: String): User =
