@@ -9,9 +9,9 @@
 
 **推荐顺序：**
 
-1. 将官方 Android 12 ARM64-only 镜像作为**待冷启动验证的首选方向**，按 `linux/arm64` manifest digest 固定；它尚不是已验证可用的运行基线。
+1. 在本轮 aarch64 宿主上使用已固定 digest 的官方 Android 12 ARM64-only 镜像；它已通过两次真实冷启动门槛，可作为**该宿主上的 redroid 软件运行基线**，但不能外推为其他宿主、产品或真机验收结论。
 2. 若镜像供应链或长期可复现性要求更高，从固定源码版本构建 `redroid_arm64_only-userdebug`。
-3. 仅在 Android 12 64-only 仍无法启动时，评估较新 redroid 的对应 `*_64only` 镜像；升级必须另做 API、系统行为和 APK 回归。
+3. 仅在该 Android 12 64-only 基线于目标宿主无法启动时，评估较新 redroid 的对应 `*_64only` 镜像；升级必须另做 API、系统行为和 APK 回归。
 4. 修补 ARM32 compat 只作为定位手段，不作为默认交付路线。
 5. 本地容器路线仍不通时，产品/KeyStore 验证优先转 ARM64 真机；Waydroid 或 Cuttlefish/QEMU-KVM 仅作为有额外运维成本的本地备选。
 
@@ -70,7 +70,7 @@ AudioService.<init>
 
 QA 还将 zygote/ABI 临时收窄到 ARM64 做诊断：主 zygote 与 `system_server` 能启动，但镜像里的 ARM32 audio/media/OMX HAL 仍失败，因此仅改 `ro.zygote` 或 ABI 属性不是修复。诊断镜像已删除。
 
-## 首选待验证方向：固定官方 ARM64-only 镜像
+## 已验证方向：固定官方 ARM64-only 镜像
 
 redroid 官方文档当前列出并在 quick start 使用 `redroid/redroid:12.0.0_64only-latest`，部署说明也明确指出部分 ARM 平台只支持 `aarch64`，此时需要 64-only 镜像。2026-11-15 查询到的 Docker Hub 元数据：
 
@@ -101,7 +101,31 @@ BOOT_TIMEOUT_SECONDS=240 COLD_BOOT_RUNS=2 \
 - 失败时即使 ADB 为 offline，也会在各自 timeout 内尽力从 Docker 侧保存 `inspect`、logs、容器内 `getprop`、`logcat`、`dmesg`、`ps`，并保留 ADB 与宿主 dmesg 的可用结果；某项 Docker 取证阻塞只产生缺项，不会让脚本无界等待；
 - 证据目录权限为 `0700` 且被 Git 忽略；内容可能含设备、package 或网络信息，分享前必须脱敏。
 
-脚本使用 `--privileged`，只应在隔离的本地验证宿主执行；它不挂持久卷，也不公开 ADB。当前环境多次访问 `registry-1.docker.io` 均返回 `EOF`，因此目前只完成 registry 元数据核验，**没有完成 64-only 镜像 pull、内容检查或冷启动，也不宣称运行可用**。registry 恢复后运行脚本，只有两次冷启动和全部自动门槛均通过，才能把该 digest 升格为 redroid 验证基线。若平台 manifest digest 不能被客户端直接拉取，应暂停并核对客户端/registry 行为，不得静默改用浮动 tag。
+脚本使用 `--privileged`，只应在隔离的本地验证宿主执行；它不挂持久卷，也不公开 ADB。若平台 manifest digest 不能被客户端直接拉取，应暂停并核对客户端/registry 行为，不得静默改用浮动 tag。
+
+### 2026-11-15 固定镜像双冷启动实测
+
+QA 在上表同一宿主（`aarch64`、Linux `6.11.0-1016-nvidia`、Docker 29.6.2、4 KiB page、binder 设备可用）执行：
+
+```bash
+BOOT_TIMEOUT_SECONDS=240 COLD_BOOT_RUNS=2 \
+DOCKER_TIMEOUT_SECONDS=30 DOCKER_PULL_TIMEOUT_SECONDS=900 \
+  scripts/verify-redroid-arm64.sh
+```
+
+本次固定输入与结果：
+
+| 项目 | 实测证据 |
+|---|---|
+| 日期 | 2026-11-15 |
+| 固定镜像 | `redroid/redroid@sha256:3c7f9450188226bf8042c0159b9b38abe2106f1ceb0dfa45fae1cbc6409cd9bb` |
+| 本地镜像 | QA 摘要记录 image ID 为 `sha256:c0966e…dacac`，OCI architecture=`arm64` |
+| 冷启动 1 | 新容器通过 `boot_completed=1`、`bootanim=stopped`、`zygote64`、`arm64-v8a`、`uname=aarch64`、Package Manager 与 `system_server` 全部门槛 |
+| 冷启动 2 | 删除首轮容器后以另一新 cid 再次通过同一组全部门槛 |
+| 最终输出 | `PASS: 2 fresh-container cold boots passed.` |
+| 补充检查 | 宽泛 fatal/restart 关键字扫描无命中；结束后本轮 ownership label 容器数为 0 |
+
+因此，该固定 digest 已升格为**此宿主上的 redroid 软件运行基线**。它仍不证明用户目标宿主可复现，也不覆盖 APK、KeyStore、硬件 TEE/StrongBox、UI/可访问性或真实 HTTP；这些继续单列验收。
 
 ## 可复取源码构建
 
@@ -171,7 +195,9 @@ ADB offline 时不能只依赖 `adb logcat`。脚本会先基于实际 cid 执�
 
 ## 清理与方案撤回（不是功能回退）
 
-优先并存验证，不覆盖旧 tag，不删除宿主已有镜像。脚本的 EXIT/INT/TERM trap 依据实际 cid 和本次随机 ownership label 双重校验，只删除本次创建且归属匹配的容器；不创建或删除持久卷。归属不匹配时脚本拒绝自动删除并报告 cid，避免误删并发任务资源。
+优先并存验证，不覆盖旧 tag，不删除宿主已有镜像。脚本的 EXIT/INT/TERM trap 依据实际 cid 和本次随机 ownership label 双重校验，只删除本次创建且归属匹配的容器；不创建或删除持久卷。归属不匹配、cid 畸形、Docker 核验或删除超时时，脚本安全失败并拒绝误删并发任务资源。
+
+自动清理是**尽力清理**而非绝对无残留承诺：若 `docker run` 客户端超时，脚本先读取本轮 cidfile，再按本轮高熵精确容器名查询并核对 ownership label；但 daemon 若在这两次探测均结束后才完成创建，仍可能留下本轮容器。失败后应使用证据目录中的 run id 检查同名及同 label 资源，再经人工核对实际 cid 与 label 后清理，不能按模糊名称批量删除。
 
 这里的“撤回”仅表示停止并删除候选容器。旧 mixed-ABI 镜像已知不能 boot complete，只能保留作故障对照，**不是可用功能回退**；registry 不可用且 64-only 镜像未缓存时，也不存在“按该 digest 立即重建”的回退能力。若后续升级到较新 redroid 出现回归，只有本机已缓存且此前完成两次冷启动门禁的固定 digest 才能作为运行基线恢复；否则转 ARM64 真机或其他已验证环境。
 
@@ -183,10 +209,10 @@ ADB offline 时不能只依赖 `adb logcat`。脚本会先基于实际 cid 执�
 | 现有 Android 12 混合 ABI 镜像静态检查 | 已实测 |
 | 混合 ABI 镜像启动失败、ADB offline 复现与清理 | 已实测 |
 | 官方 12 64-only tag、index/arm64 manifest digest 元数据 | 已核验 |
-| 官方 12 64-only 镜像拉取与 boot complete | 未执行成功；Docker registry 返回 EOF |
+| 官方 12 64-only 固定 digest 拉取与双冷启动 | 2026-11-15 已在本宿主实测通过；两次均通过全部硬门槛，结束后本轮 label 容器数为 0 |
 | ARM32 compat 修补 | 未执行；已有 32 位 ELF `Exec format error` 与 Watchdog 日志，且 CPU 仅报告 64-bit op-mode，当前宿主不适合该路线 |
 | Waydroid/Cuttlefish/QEMU/真机启动 | 未执行；需要额外镜像/host 套件或设备 |
-| 产品 APK、KeyStore 与真实接口验收 | 不在本轮完成范围，保持待验证 |
+| 产品 APK、KeyStore、UI/可访问性与真实接口验收 | redroid 软件基线通过不替代这些验收，保持待验证；硬件 TEE/StrongBox 需真机 |
 
 ## 上游依据
 
