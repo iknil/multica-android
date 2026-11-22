@@ -1,0 +1,3607 @@
+From fc958e25c55f71d253dc45605c4beccf7446632d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?=E9=BB=8E=E5=93=B2=E5=BA=B7?= <lizhekang.lk@bytedance.com>
+Date: Sun, 22 Nov 2026 18:12:41 +0800
+Subject: [PATCH] GANY-28: add Android browser auth handoff on main
+
+Co-authored-by: multica-agent <github@multica.ai>
+---
+ .env.example                                  |   6 +
+ apps/docs/content/docs/auth-tokens.fr.mdx     |   4 +
+ apps/docs/content/docs/auth-tokens.ja.mdx     |   4 +
+ apps/docs/content/docs/auth-tokens.ko.mdx     |   4 +
+ apps/docs/content/docs/auth-tokens.mdx        |   4 +
+ .../docs/content/docs/auth-tokens.zh-Hant.mdx |   4 +
+ apps/docs/content/docs/auth-tokens.zh.mdx     |   4 +
+ .../content/docs/environment-variables.fr.mdx |   7 +
+ .../content/docs/environment-variables.ja.mdx |   7 +
+ .../content/docs/environment-variables.ko.mdx |   7 +
+ .../content/docs/environment-variables.mdx    |   7 +
+ .../docs/environment-variables.zh-Hant.mdx    |   7 +
+ .../content/docs/environment-variables.zh.mdx |   7 +
+ apps/web/app/(auth)/login/page.test.tsx       | 184 +++++++++-
+ apps/web/app/(auth)/login/page.tsx            | 152 ++++++--
+ .../.well-known/assetlinks.json/route.test.ts |  37 ++
+ .../app/.well-known/assetlinks.json/route.ts  |  30 ++
+ .../app/auth/android/callback/page.test.tsx   |  95 +++++
+ apps/web/app/auth/android/callback/page.tsx   |  36 ++
+ apps/web/app/auth/callback/callback-error.ts  |   2 +
+ apps/web/app/auth/callback/page.test.tsx      | 137 +++++++
+ apps/web/app/auth/callback/page.tsx           |  58 ++-
+ apps/web/config/runtime-urls.ts               |   2 +
+ apps/web/eslint.config.mjs                    |   4 +
+ apps/web/features/auth/android-auth.test.ts   | 328 +++++++++++++++++
+ apps/web/features/auth/android-auth.ts        | 322 +++++++++++++++++
+ .../features/auth/android-handoff-card.tsx    |  68 ++++
+ apps/web/next.config.test.ts                  |  21 ++
+ apps/web/next.config.ts                       |  11 +
+ apps/web/proxy.test.ts                        |  57 ++-
+ deploy/helm/multica/templates/configmap.yaml  |   1 +
+ deploy/helm/multica/templates/frontend.yaml   |   4 +
+ deploy/helm/multica/values.yaml               |   4 +
+ docker-compose.selfhost.yml                   |   2 +
+ docs/android-auth-handoff.md                  |  59 +++
+ packages/core/api/schema.test.ts              |  25 +-
+ packages/core/api/schema.ts                   |  12 +-
+ packages/views/auth/login-page.test.tsx       |  31 ++
+ packages/views/auth/login-page.tsx            |  11 +-
+ packages/views/locales/en/auth.json           |   8 +
+ packages/views/locales/es/auth.json           |   8 +
+ packages/views/locales/fr/auth.json           |   8 +
+ packages/views/locales/ja/auth.json           |   8 +
+ packages/views/locales/ko/auth.json           |   8 +
+ packages/views/locales/ru/auth.json           |   8 +
+ packages/views/locales/zh-Hans/auth.json      |   8 +
+ packages/views/locales/zh-Hant/auth.json      |   8 +
+ server/cmd/migrate/main.go                    |   2 +
+ server/cmd/server/android_auth_test.go        |  33 ++
+ server/cmd/server/router.go                   |   2 +
+ server/internal/handler/android_auth.go       | 217 +++++++++++
+ server/internal/handler/android_auth_test.go  | 337 ++++++++++++++++++
+ server/internal/handler/auth.go               |  30 +-
+ .../handler/auth_android_login_test.go        |  60 ++++
+ .../migrations/723_android_auth_code.down.sql |   1 +
+ .../migrations/723_android_auth_code.up.sql   |  10 +
+ .../724_android_auth_code_hash_idx.down.sql   |   1 +
+ .../724_android_auth_code_hash_idx.up.sql     |   1 +
+ .../725_android_auth_code_expiry_idx.down.sql |   1 +
+ .../725_android_auth_code_expiry_idx.up.sql   |   1 +
+ .../pkg/db/generated/android_auth_code.sql.go |  77 ++++
+ server/pkg/db/generated/models.go             |  11 +
+ server/pkg/db/queries/android_auth_code.sql   |  14 +
+ 63 files changed, 2581 insertions(+), 46 deletions(-)
+ create mode 100644 apps/web/app/.well-known/assetlinks.json/route.test.ts
+ create mode 100644 apps/web/app/.well-known/assetlinks.json/route.ts
+ create mode 100644 apps/web/app/auth/android/callback/page.test.tsx
+ create mode 100644 apps/web/app/auth/android/callback/page.tsx
+ create mode 100644 apps/web/features/auth/android-auth.test.ts
+ create mode 100644 apps/web/features/auth/android-auth.ts
+ create mode 100644 apps/web/features/auth/android-handoff-card.tsx
+ create mode 100644 docs/android-auth-handoff.md
+ create mode 100644 server/cmd/server/android_auth_test.go
+ create mode 100644 server/internal/handler/android_auth.go
+ create mode 100644 server/internal/handler/android_auth_test.go
+ create mode 100644 server/internal/handler/auth_android_login_test.go
+ create mode 100644 server/migrations/723_android_auth_code.down.sql
+ create mode 100644 server/migrations/723_android_auth_code.up.sql
+ create mode 100644 server/migrations/724_android_auth_code_hash_idx.down.sql
+ create mode 100644 server/migrations/724_android_auth_code_hash_idx.up.sql
+ create mode 100644 server/migrations/725_android_auth_code_expiry_idx.down.sql
+ create mode 100644 server/migrations/725_android_auth_code_expiry_idx.up.sql
+ create mode 100644 server/pkg/db/generated/android_auth_code.sql.go
+ create mode 100644 server/pkg/db/queries/android_auth_code.sql
+
+diff --git a/.env.example b/.env.example
+index 77362ea69..295e20509 100644
+--- a/.env.example
++++ b/.env.example
+@@ -65,6 +65,12 @@ FRONTEND_PORT=3000
+ # Derived by docker-compose.selfhost.yml / local scripts from FRONTEND_PORT.
+ # Set explicitly only when serving frontend on a different origin/domain.
+ FRONTEND_ORIGIN=http://localhost:${FRONTEND_PORT}
++# Web server only: public Android release certificate SHA-256 fingerprints.
++# Colon-separated hex bytes; comma-separate certificates during rotation.
++# Leave empty until the release signing owner supplies the public fingerprint.
++ANDROID_RELEASE_CERT_SHA256=
++# API only: enable HTTPS Android callbacks after domain association is verified.
++ANDROID_AUTH_USE_APP_LINKS=false
+ # Prometheus metrics are disabled by default. When enabled, bind to loopback
+ # unless you protect the listener with private networking, allowlists, or
+ # proxy auth. Do not expose this endpoint through the public app/API ingress.
+diff --git a/apps/docs/content/docs/auth-tokens.fr.mdx b/apps/docs/content/docs/auth-tokens.fr.mdx
+index 2c56b17be..271b3cbde 100644
+--- a/apps/docs/content/docs/auth-tokens.fr.mdx
++++ b/apps/docs/content/docs/auth-tokens.fr.mdx
+@@ -15,6 +15,10 @@ Par défaut, une session dure 30 jours, mais il ne s'agit pas d'un compte à reb
+ 
+ Les cookies du navigateur ne sont pas faits pour être copiés dans des scripts ou dans le CLI ; utilisez un jeton d'accès personnel pour accéder à Multica depuis un terminal.
+ 
++## Connexion du navigateur vers Android
++
++Quand Android ouvre la connexion par e-mail ou Google dans le navigateur, un code à usage unique permet de revenir à l'application. Valable au maximum cinq minutes, ce code est lié au state et au challenge PKCE S256 créés par l'application. Celle-ci l'échange dans sa WebView contre une nouvelle session HttpOnly et des cookies CSRF lisibles ; aucun bearer token n'est transmis à JavaScript ni dans la redirection. Les sessions du navigateur et de la WebView restent indépendantes. La vérification des HTTPS App Links nécessite l'empreinte publique du certificat de signature de production dans `ANDROID_RELEASE_CERT_SHA256` sur le serveur web, sans clé privée de signature.
++
+ ## Jetons d'accès personnels
+ 
+ Un jeton d'accès personnel (PAT) commence par `mul_` et représente votre compte. Il peut accéder à tous les espaces de travail et à toutes les API auxquels vous avez accès : protégez-le comme un mot de passe.
+diff --git a/apps/docs/content/docs/auth-tokens.ja.mdx b/apps/docs/content/docs/auth-tokens.ja.mdx
+index 0ad4f815f..e5eb434ce 100644
+--- a/apps/docs/content/docs/auth-tokens.ja.mdx
++++ b/apps/docs/content/docs/auth-tokens.ja.mdx
+@@ -15,6 +15,10 @@ Multica の日常的な利用で主に扱う認証情報は 2 種類です: ブ
+ 
+ ブラウザの cookie をスクリプトや CLI にコピーするのは適切ではありません。ターミナルから Multica にアクセスするには個人アクセストークンを使います。
+ 
++## Android へのブラウザ認証の引き継ぎ
++
++Android がブラウザでメールまたは Google 認証を開くと、使い捨てコードでアプリに戻ります。コードの有効期間は最大 5 分で、アプリが生成した state と PKCE S256 challenge に紐付きます。アプリは WebView 内でコードを交換し、新しい HttpOnly セッションと読み取り可能な CSRF cookie を受け取ります。リダイレクトと JavaScript に bearer token は渡されません。ブラウザと WebView のセッションは独立しています。HTTPS App Links の検証には、Web サーバーの `ANDROID_RELEASE_CERT_SHA256` にリリース署名証明書の公開フィンガープリントを設定します。秘密署名鍵は不要です。
++
+ ## 個人アクセストークン
+ 
+ 個人アクセストークン（PAT）は `mul_` で始まり、あなたのアカウントを表します。あなたがアクセスできるすべてのワークスペースと API にアクセスできるため、パスワードと同じように保管してください。
+diff --git a/apps/docs/content/docs/auth-tokens.ko.mdx b/apps/docs/content/docs/auth-tokens.ko.mdx
+index 18353ec48..eef71b334 100644
+--- a/apps/docs/content/docs/auth-tokens.ko.mdx
++++ b/apps/docs/content/docs/auth-tokens.ko.mdx
+@@ -15,6 +15,10 @@ Multica를 일상적으로 사용할 때 주로 접하는 자격 증명은 브
+ 
+ 브라우저 cookie는 스크립트나 CLI에 복사하기에 적합하지 않습니다. 터미널에서 Multica에 접근할 때는 개인 액세스 토큰을 사용하세요.
+ 
++## Android 브라우저 로그인 연결
++
++Android가 브라우저에서 이메일 또는 Google 로그인을 열면 일회용 코드로 앱에 돌아옵니다. 코드는 최대 5분 동안 유효하며 앱이 생성한 state와 PKCE S256 challenge에 연결됩니다. 앱은 WebView에서 코드를 교환해 새 HttpOnly 세션과 읽기 가능한 CSRF cookie를 받습니다. 리디렉션과 JavaScript에는 bearer token이 전달되지 않습니다. 브라우저와 WebView의 세션은 서로 독립적입니다. HTTPS App Links 검증에는 Web 서버의 `ANDROID_RELEASE_CERT_SHA256`에 릴리스 서명 인증서의 공개 지문을 설정해야 합니다. 비공개 서명 키는 필요하지 않습니다.
++
+ ## 개인 액세스 토큰
+ 
+ 개인 액세스 토큰(PAT)은 `mul_`로 시작하며 사용자 계정을 나타냅니다. 사용자가 접근할 권한이 있는 모든 워크스페이스와 API에 접근할 수 있으므로 비밀번호처럼 보관해야 합니다.
+diff --git a/apps/docs/content/docs/auth-tokens.mdx b/apps/docs/content/docs/auth-tokens.mdx
+index b61fb658d..af06543c0 100644
+--- a/apps/docs/content/docs/auth-tokens.mdx
++++ b/apps/docs/content/docs/auth-tokens.mdx
+@@ -15,6 +15,10 @@ By default a session lasts 30 days, but that is not a countdown from sign-in: a
+ 
+ Browser cookies are not meant to be copied into scripts or the CLI; use a personal access token to access Multica from a terminal.
+ 
++## Android browser handoff
++
++When Android opens browser sign-in, a single-use code returns to the app after email or Google authentication. The code expires within five minutes and is bound to the initiating app's state and PKCE S256 challenge. The app exchanges it inside its WebView for a new HttpOnly session and readable CSRF cookies; the redirect and JavaScript receive no bearer token. Browser and WebView sessions remain separate. Verified HTTPS App Links require the deployment's public release certificate fingerprint in `ANDROID_RELEASE_CERT_SHA256` on the web server; no private signing key is needed.
++
+ ## Personal access tokens
+ 
+ A personal access token (PAT) starts with `mul_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
+diff --git a/apps/docs/content/docs/auth-tokens.zh-Hant.mdx b/apps/docs/content/docs/auth-tokens.zh-Hant.mdx
+index 8f8205e54..ae5b1f26d 100644
+--- a/apps/docs/content/docs/auth-tokens.zh-Hant.mdx
++++ b/apps/docs/content/docs/auth-tokens.zh-Hant.mdx
+@@ -15,6 +15,10 @@ import { Callout } from "fumadocs-ui/components/callout";
+ 
+ 瀏覽器 cookie 不適合複製到指令碼或 CLI；從終端訪問 Multica 使用個人訪問令牌。
+ 
++## Android 瀏覽器登入回流
++
++Android 開啟瀏覽器，透過信箱或 Google 登入後，以一次性授權碼返回應用程式。授權碼最多有效五分鐘，並綁定應用程式發起的 state 和 PKCE S256 challenge。應用程式在 WebView 中兌換新的 HttpOnly 會話與可讀的 CSRF cookie；跳轉連結和 JavaScript 都不會收到 bearer token。瀏覽器與 WebView 的會話互相獨立。驗證 HTTPS App Links 時，需要在 Web 服務的 `ANDROID_RELEASE_CERT_SHA256` 中設定正式簽章憑證的公開指紋，無需提供私有簽章金鑰。
++
+ ## 個人訪問令牌
+ 
+ 個人訪問令牌（PAT）以 `mul_` 開頭，代表你的帳號。它可以訪問你有權訪問的全部工作區和 API，需要像密碼一樣保管。
+diff --git a/apps/docs/content/docs/auth-tokens.zh.mdx b/apps/docs/content/docs/auth-tokens.zh.mdx
+index 7cdf0667e..7d147abdf 100644
+--- a/apps/docs/content/docs/auth-tokens.zh.mdx
++++ b/apps/docs/content/docs/auth-tokens.zh.mdx
+@@ -15,6 +15,10 @@ import { Callout } from "fumadocs-ui/components/callout";
+ 
+ 浏览器 cookie 不适合复制到脚本或 CLI；从终端访问 Multica 使用个人访问令牌。
+ 
++## Android 浏览器登录回流
++
++Android 打开浏览器，通过邮箱或 Google 登录后，用一次性授权码返回应用。授权码最多有效五分钟，并绑定应用发起的 state 和 PKCE S256 challenge。应用在 WebView 中兑换新的 HttpOnly 会话和可读的 CSRF cookie；跳转链接和 JavaScript 都不会收到 bearer token。浏览器和 WebView 的会话互相独立。验证 HTTPS App Links 时，需要在 Web 服务的 `ANDROID_RELEASE_CERT_SHA256` 中配置正式签名证书的公开指纹，无需提供私有签名密钥。
++
+ ## 个人访问令牌
+ 
+ 个人访问令牌（PAT）以 `mul_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
+diff --git a/apps/docs/content/docs/environment-variables.fr.mdx b/apps/docs/content/docs/environment-variables.fr.mdx
+index 1c36d968c..499d5b482 100644
+--- a/apps/docs/content/docs/environment-variables.fr.mdx
++++ b/apps/docs/content/docs/environment-variables.fr.mdx
+@@ -108,6 +108,13 @@ SMTP est prioritaire sur Resend dès que `SMTP_HOST` n'est pas vide.
+ | `GOOGLE_CLIENT_SECRET` | vide | Secret client Google OAuth |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | Doit correspondre exactement à l'URL de rappel configurée dans la Google Console |
+ 
++### Android App Links
++
++| Variable | Valeur par défaut | Description |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | vide | Serveur web : empreintes publiques SHA-256 des certificats de production, octets séparés par des deux-points et certificats séparés par des virgules. Publie `/.well-known/assetlinks.json` pour `ai.multica.android` ; une valeur absente ou invalide renvoie 503. Aucun keystore privé n'est nécessaire. |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | Serveur API : utilise le rappel HTTPS Android. À activer seulement après vérification de l'association du domaine ; exige un `FRONTEND_ORIGIN` HTTPS. |
++
+ ### Périmètre des inscriptions
+ 
+ | Variable | Valeur par défaut | Description |
+diff --git a/apps/docs/content/docs/environment-variables.ja.mdx b/apps/docs/content/docs/environment-variables.ja.mdx
+index 46f2372e2..ba7dd6dc4 100644
+--- a/apps/docs/content/docs/environment-variables.ja.mdx
++++ b/apps/docs/content/docs/environment-variables.ja.mdx
+@@ -108,6 +108,13 @@ primary とレプリカの接続上限は独立しています。全 API プロ
+ | `GOOGLE_CLIENT_SECRET` | 空 | Google OAuth client secret |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | Google Console のコールバックアドレスと完全に一致している必要があります |
+ 
++### Android App Links
++
++| 変数 | デフォルト | 説明 |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | 空 | Web サーバー用の公開リリース証明書 SHA-256 フィンガープリント。バイトはコロン、複数の証明書はカンマで区切ります。`ai.multica.android` の `/.well-known/assetlinks.json` を公開し、未設定または不正な値は 503 を返します。秘密 keystore は不要です。 |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | API サーバーで HTTPS Android コールバックを使用します。ドメイン関連付けの検証後にのみ有効にし、HTTPS の `FRONTEND_ORIGIN` を設定してください。 |
++
+ ### サインアップ範囲
+ 
+ | 変数 | デフォルト | 説明 |
+diff --git a/apps/docs/content/docs/environment-variables.ko.mdx b/apps/docs/content/docs/environment-variables.ko.mdx
+index 78a8d5353..5dc64b616 100644
+--- a/apps/docs/content/docs/environment-variables.ko.mdx
++++ b/apps/docs/content/docs/environment-variables.ko.mdx
+@@ -108,6 +108,13 @@ primary와 복제본의 연결 한도는 서로 독립적입니다. 모든 API 
+ | `GOOGLE_CLIENT_SECRET` | 비어 있음 | Google OAuth client secret |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | Google Console의 callback 주소와 완전히 같아야 함 |
+ 
++### Android App Links
++
++| 변수 | 기본값 | 설명 |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | 비어 있음 | Web 서버용 공개 릴리스 인증서 SHA-256 지문입니다. 바이트는 콜론, 여러 지문은 쉼표로 구분합니다. `ai.multica.android`의 `/.well-known/assetlinks.json`을 게시하며, 없거나 형식이 잘못되면 503을 반환합니다. 비공개 keystore는 필요하지 않습니다. |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | API 서버에서 HTTPS Android 콜백을 사용합니다. 도메인 연결 검증 후에만 활성화하며 HTTPS `FRONTEND_ORIGIN`이 필요합니다. |
++
+ ### 가입 범위
+ 
+ | 변수 | 기본값 | 설명 |
+diff --git a/apps/docs/content/docs/environment-variables.mdx b/apps/docs/content/docs/environment-variables.mdx
+index 7dfb56933..5161b4711 100644
+--- a/apps/docs/content/docs/environment-variables.mdx
++++ b/apps/docs/content/docs/environment-variables.mdx
+@@ -108,6 +108,13 @@ SMTP takes priority over Resend whenever `SMTP_HOST` is non-empty.
+ | `GOOGLE_CLIENT_SECRET` | empty | Google OAuth client secret |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | Must exactly match the callback URL in the Google Console |
+ 
++### Android App Links
++
++| Variable | Default | Description |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | empty | Web server: comma-separated public release certificate SHA-256 fingerprints in colon-separated hexadecimal. Publishes `/.well-known/assetlinks.json` for `ai.multica.android`; missing or invalid values return 503. Never supply a private keystore. |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | API server: return HTTPS Android callbacks instead of the custom scheme. Enable only after domain association is verified; requires an HTTPS `FRONTEND_ORIGIN`. |
++
+ ### Signup scope
+ 
+ | Variable | Default | Description |
+diff --git a/apps/docs/content/docs/environment-variables.zh-Hant.mdx b/apps/docs/content/docs/environment-variables.zh-Hant.mdx
+index edfe79223..3edde497a 100644
+--- a/apps/docs/content/docs/environment-variables.zh-Hant.mdx
++++ b/apps/docs/content/docs/environment-variables.zh-Hant.mdx
+@@ -108,6 +108,13 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
+ | `GOOGLE_CLIENT_SECRET` | 空 | Google OAuth client secret |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | 必須與 Google Console 中的回撥地址完全一致 |
+ 
++### Android App Links
++
++| 變數 | 預設值 | 說明 |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | 空 | Web 服務使用的正式簽章憑證公開 SHA-256 指紋，位元組以冒號分隔，多枚指紋以逗號分隔。為 `ai.multica.android` 發布 `/.well-known/assetlinks.json`；缺失或格式無效時返回 503。無需私有 keystore。 |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | API 服務改用 HTTPS Android 回呼；僅在網域關聯驗證通過後開啟，且 `FRONTEND_ORIGIN` 必須為 HTTPS。 |
++
+ ### 註冊範圍
+ 
+ | 變數 | 預設值 | 說明 |
+diff --git a/apps/docs/content/docs/environment-variables.zh.mdx b/apps/docs/content/docs/environment-variables.zh.mdx
+index 2fe70a34c..775441ccb 100644
+--- a/apps/docs/content/docs/environment-variables.zh.mdx
++++ b/apps/docs/content/docs/environment-variables.zh.mdx
+@@ -108,6 +108,13 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
+ | `GOOGLE_CLIENT_SECRET` | 空 | Google OAuth client secret |
+ | `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | 必须与 Google Console 中的回调地址完全一致 |
+ 
++### Android App Links
++
++| 变量 | 默认值 | 说明 |
++|---|---|---|
++| `ANDROID_RELEASE_CERT_SHA256` | 空 | Web 服务使用的正式签名证书公开 SHA-256 指纹，字节以冒号分隔，多枚指纹以逗号分隔。为 `ai.multica.android` 发布 `/.well-known/assetlinks.json`；缺失或格式无效时返回 503。无需私有 keystore。 |
++| `ANDROID_AUTH_USE_APP_LINKS` | `false` | API 服务改用 HTTPS Android 回调；仅在域名关联验证通过后开启，且 `FRONTEND_ORIGIN` 必须为 HTTPS。 |
++
+ ### 注册范围
+ 
+ | 变量 | 默认值 | 说明 |
+diff --git a/apps/web/app/(auth)/login/page.test.tsx b/apps/web/app/(auth)/login/page.test.tsx
+index 7c2dd027a..0814dc81d 100644
+--- a/apps/web/app/(auth)/login/page.test.tsx
++++ b/apps/web/app/(auth)/login/page.test.tsx
+@@ -1,5 +1,6 @@
+ import { describe, it, expect, vi, beforeEach } from "vitest";
+ import { act, render, screen, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
+ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { I18nProvider } from "@multica/core/i18n/react";
+ import enCommon from "@multica/views/locales/en/common.json";
+@@ -24,6 +25,9 @@ const {
+   mockIssueCliToken,
+   mockListWorkspaces,
+   mockListMyInvitations,
++  mockPrepareAndroidHandoff,
++  mockVerifyAndroidEmailCode,
++  mockSetLoggedInCookie,
+   mockPush,
+   mockReplace,
+   searchParamsState,
+@@ -32,6 +36,9 @@ const {
+   mockIssueCliToken: vi.fn(),
+   mockListWorkspaces: vi.fn(),
+   mockListMyInvitations: vi.fn(),
++  mockPrepareAndroidHandoff: vi.fn(),
++  mockVerifyAndroidEmailCode: vi.fn(),
++  mockSetLoggedInCookie: vi.fn(),
+   mockPush: vi.fn(),
+   mockReplace: vi.fn(),
+   searchParamsState: { params: new URLSearchParams() },
+@@ -72,7 +79,24 @@ vi.mock("@multica/core/auth", async () => {
+ 
+ // Mock auth-cookie
+ vi.mock("@/features/auth/auth-cookie", () => ({
+-  setLoggedInCookie: vi.fn(),
++  setLoggedInCookie: mockSetLoggedInCookie,
++}));
++
++vi.mock("@/features/auth/android-auth", async () => {
++  const actual =
++    await vi.importActual<typeof import("@/features/auth/android-auth")>(
++      "@/features/auth/android-auth",
++    );
++  return {
++    ...actual,
++    prepareAndroidHandoff: mockPrepareAndroidHandoff,
++    verifyAndroidEmailCode: mockVerifyAndroidEmailCode,
++  };
++});
++
++vi.mock("@multica/core/config", () => ({
++  useConfigStore: (selector: (state: { googleClientId: string }) => unknown) =>
++    selector({ googleClientId: "google-client-id" }),
+ }));
+ 
+ // Mock api
+@@ -89,14 +113,52 @@ vi.mock("@multica/core/api", () => ({
+ 
+ import LoginPage from "./page";
+ 
++const ANDROID_STATE = "A".repeat(43);
++const ANDROID_CHALLENGE = `${"B".repeat(42)}A`;
++const ANDROID_REDIRECT = `multica-android://auth/callback?code=handoff-code&state=${ANDROID_STATE}`;
++
++function androidSearchParams() {
++  return new URLSearchParams({
++    platform: "android",
++    android_state: ANDROID_STATE,
++    android_challenge: ANDROID_CHALLENGE,
++  });
++}
++
++function captureLocationHref() {
++  const originalLocation = window.location;
++  const setter = vi.fn();
++  Object.defineProperty(window, "location", {
++    configurable: true,
++    value: {
++      ...originalLocation,
++      set href(value: string) {
++        setter(value);
++      },
++    },
++  });
++  return {
++    setter,
++    restore: () =>
++      Object.defineProperty(window, "location", {
++        configurable: true,
++        value: originalLocation,
++      }),
++  };
++}
++
+ describe("LoginPage", () => {
+   beforeEach(() => {
+     vi.clearAllMocks();
+     searchParamsState.params = new URLSearchParams();
+     authStateRef.state.user = null;
+     authStateRef.state.isLoading = false;
++    authStateRef.state.sendCode.mockResolvedValue(undefined);
++    localStorage.clear();
+     mockListWorkspaces.mockResolvedValue([]);
+     mockListMyInvitations.mockResolvedValue([]);
++    mockVerifyAndroidEmailCode.mockResolvedValue({ id: "android-user" });
++    mockPrepareAndroidHandoff.mockResolvedValue(ANDROID_REDIRECT);
+   });
+ 
+   it.each([null, { id: "u1", email: "test@multica.ai" }])(
+@@ -127,6 +189,126 @@ describe("LoginPage", () => {
+   // packages/views/auth/login-page.test.tsx. This wrapper suite only owns web
+   // platform handoff and redirect behavior.
+ 
++  describe("Android cookie handoff", () => {
++    it("uses cookie-only email verification and prepares a code handoff", async () => {
++      searchParamsState.params = androidSearchParams();
++      const location = captureLocationHref();
++      const storageSet = vi.spyOn(Storage.prototype, "setItem");
++
++      try {
++        render(<LoginPage />, { wrapper: createWrapper() });
++        const user = userEvent.setup();
++        await user.type(screen.getByLabelText("Email"), "android@example.com");
++        await user.click(screen.getByRole("button", { name: "Continue" }));
++        await waitFor(() => {
++          expect(screen.getByText("Check your email")).toBeInTheDocument();
++        });
++        await user.type(screen.getByRole("textbox", { hidden: true }), "123456");
++
++        await waitFor(() => {
++          expect(mockVerifyAndroidEmailCode).toHaveBeenCalledWith(
++            "android@example.com",
++            "123456",
++          );
++          expect(mockPrepareAndroidHandoff).toHaveBeenCalledWith({
++            state: ANDROID_STATE,
++            codeChallenge: ANDROID_CHALLENGE,
++          });
++          expect(location.setter).toHaveBeenCalledWith(ANDROID_REDIRECT);
++        });
++        expect(mockSetLoggedInCookie).toHaveBeenCalledTimes(1);
++        expect(mockIssueCliToken).not.toHaveBeenCalled();
++        expect(authStateRef.state.verifyCode).not.toHaveBeenCalled();
++        expect(storageSet).not.toHaveBeenCalled();
++      } finally {
++        storageSet.mockRestore();
++        location.restore();
++      }
++    });
++
++    it("prepares immediately from an existing cookie session", async () => {
++      searchParamsState.params = androidSearchParams();
++      authStateRef.state.user = { id: "u1", email: "cookie@example.com" };
++      const location = captureLocationHref();
++      const storageSet = vi.spyOn(Storage.prototype, "setItem");
++
++      try {
++        render(<LoginPage />, { wrapper: createWrapper() });
++
++        await waitFor(() => {
++          expect(mockPrepareAndroidHandoff).toHaveBeenCalledWith({
++            state: ANDROID_STATE,
++            codeChallenge: ANDROID_CHALLENGE,
++          });
++          expect(location.setter).toHaveBeenCalledWith(ANDROID_REDIRECT);
++        });
++        expect(mockIssueCliToken).not.toHaveBeenCalled();
++        expect(storageSet).not.toHaveBeenCalled();
++        expect(mockPush).not.toHaveBeenCalled();
++        expect(mockReplace).not.toHaveBeenCalled();
++      } finally {
++        storageSet.mockRestore();
++        location.restore();
++      }
++    });
++
++    it("preserves the Android state and challenge in Google OAuth state", async () => {
++      searchParamsState.params = androidSearchParams();
++      const location = captureLocationHref();
++
++      try {
++        render(<LoginPage />, { wrapper: createWrapper() });
++        await userEvent
++          .setup()
++          .click(screen.getByRole("button", { name: "Continue with Google" }));
++
++        expect(location.setter).toHaveBeenCalledTimes(1);
++        const href = location.setter.mock.calls[0]?.[0];
++        expect(typeof href).toBe("string");
++        const googleUrl = new URL(String(href));
++        expect(googleUrl.origin).toBe("https://accounts.google.com");
++        expect(googleUrl.searchParams.get("state")).toBe(
++          `platform:android,android_state:${ANDROID_STATE},android_challenge:${ANDROID_CHALLENGE}`,
++        );
++        expect(mockIssueCliToken).not.toHaveBeenCalled();
++      } finally {
++        location.restore();
++      }
++    });
++
++    it("blocks malformed Android parameters before login or token issuance", () => {
++      searchParamsState.params = new URLSearchParams({
++        platform: "android",
++        android_state: "not-canonical",
++        android_challenge: ANDROID_CHALLENGE,
++      });
++
++      render(<LoginPage />, { wrapper: createWrapper() });
++
++      expect(
++        screen.getByText(
++          "The Android sign-in request is invalid. Return to the app and try again.",
++        ),
++      ).toBeInTheDocument();
++      expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
++      expect(mockPrepareAndroidHandoff).not.toHaveBeenCalled();
++      expect(mockIssueCliToken).not.toHaveBeenCalled();
++    });
++
++    it("shows a localized error when preparation fails", async () => {
++      searchParamsState.params = androidSearchParams();
++      authStateRef.state.user = { id: "u1", email: "cookie@example.com" };
++      mockPrepareAndroidHandoff.mockRejectedValue(new Error("network"));
++
++      render(<LoginPage />, { wrapper: createWrapper() });
++
++      expect(
++        await screen.findByText("Failed to prepare Android sign-in"),
++      ).toBeInTheDocument();
++      expect(mockIssueCliToken).not.toHaveBeenCalled();
++    });
++  });
++
+   // Regression: MUL-1080 — if the user is already authenticated on the web
+   // and the Desktop app redirects them to /login?platform=desktop, the web
+   // must exchange the cookie session for a bearer token and hand it off via
+diff --git a/apps/web/app/(auth)/login/page.tsx b/apps/web/app/(auth)/login/page.tsx
+index e73a72474..4a9bc3356 100644
+--- a/apps/web/app/(auth)/login/page.tsx
++++ b/apps/web/app/(auth)/login/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { Suspense, useEffect, useRef, useState } from "react";
++import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+ import { useSearchParams, useRouter } from "next/navigation";
+ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+ import { sanitizeNextUrl, useAuthStore } from "@multica/core/auth";
+@@ -26,6 +26,13 @@ import {
+ import { Button } from "@multica/ui/components/ui/button";
+ import { Loader2 } from "@multica/ui/icons";
+ import { CliCallbackError } from "@/features/auth/cli-callback-error";
++import { AndroidHandoffCard } from "@/features/auth/android-handoff-card";
++import {
++  androidOAuthStateParts,
++  prepareAndroidHandoff,
++  readAndroidLoginRequest,
++  verifyAndroidEmailCode,
++} from "@/features/auth/android-auth";
+ import { setLoggedInCookie } from "@/features/auth/auth-cookie";
+ import Link from "next/link";
+ import { LoginPage, validateCliCallback } from "@multica/views/auth";
+@@ -67,9 +74,20 @@ function LoginPageContent() {
+   const searchParams = useSearchParams();
+ 
+   const cliCallbackRaw = searchParams.get("cli_callback");
+-  const cliState = searchParams.get("cli_state") || "";
+-  const invalidCliCallback = cliCallbackRaw !== null && !validateCliCallback(cliCallbackRaw);
++  const cliStateRaw = searchParams.get("cli_state");
++  const cliState = cliStateRaw || "";
+   const platform = searchParams.get("platform");
++  const androidRequestResult = readAndroidLoginRequest(searchParams);
++  const isAndroidHandoff = androidRequestResult.kind === "valid";
++  const invalidAndroidRequest =
++    platform === "android" &&
++    (androidRequestResult.kind !== "valid" ||
++      cliCallbackRaw !== null ||
++      cliStateRaw !== null);
++  const invalidCliCallback =
++    platform !== "android" &&
++    cliCallbackRaw !== null &&
++    !validateCliCallback(cliCallbackRaw);
+   const isDesktopHandoff = platform === "desktop" && cliCallbackRaw === null;
+   // `next` carries a protected URL the user was originally headed to
+   // (e.g. /invite/{id}). With URL-driven workspaces there is no legacy
+@@ -80,6 +98,10 @@ function LoginPageContent() {
+ 
+   const [desktopToken, setDesktopToken] = useState<string | null>(null);
+   const [desktopError, setDesktopError] = useState("");
++  const [androidRedirectUrl, setAndroidRedirectUrl] = useState<string | null>(null);
++  const [androidPreparing, setAndroidPreparing] = useState(false);
++  const [androidPrepareError, setAndroidPrepareError] = useState(false);
++  const androidPrepareStartedRef = useRef<string | null>(null);
+   const hasOnboarded = useHasOnboarded();
+ 
+   // Latched once auth has been observed settled as logged-out on this page.
+@@ -87,6 +109,37 @@ function LoginPageContent() {
+   // session — not from an existing session found on arrival.
+   const settledLoggedOutRef = useRef(false);
+ 
++  const androidState =
++    androidRequestResult.kind === "valid"
++      ? androidRequestResult.request.state
++      : null;
++  const androidChallenge =
++    androidRequestResult.kind === "valid"
++      ? androidRequestResult.request.codeChallenge
++      : null;
++
++  const beginAndroidHandoff = useCallback(async () => {
++    if (!androidState || !androidChallenge) return;
++    const requestKey = `${androidState}:${androidChallenge}`;
++    if (androidPrepareStartedRef.current === requestKey) return;
++    androidPrepareStartedRef.current = requestKey;
++    setAndroidPreparing(true);
++    setAndroidPrepareError(false);
++
++    try {
++      const redirectUrl = await prepareAndroidHandoff({
++        state: androidState,
++        codeChallenge: androidChallenge,
++      });
++      setAndroidRedirectUrl(redirectUrl);
++      window.location.href = redirectUrl;
++    } catch {
++      setAndroidPrepareError(true);
++    } finally {
++      setAndroidPreparing(false);
++    }
++  }, [androidChallenge, androidState]);
++
+   // Already authenticated ON ARRIVAL — honor ?next= or fall back to first
+   // workspace (or /onboarding if the user has none). Skip this entire path
+   // when the user arrived to authorize the CLI.
+@@ -96,6 +149,11 @@ function LoginPageContent() {
+       settledLoggedOutRef.current = true;
+       return;
+     }
++    if (invalidAndroidRequest) return;
++    if (isAndroidHandoff) {
++      void beginAndroidHandoff();
++      return;
++    }
+     if (cliCallbackRaw !== null) return;
+     if (isDesktopHandoff) {
+       // Desktop opened the browser for login but the web session is already
+@@ -136,7 +194,20 @@ function LoginPageContent() {
+       .catch(() => [] as Workspace[])
+       .then((list) => resolveLoggedInDestination(qc, hasOnboarded, list))
+       .then((dest) => router.replace(dest));
+-  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc]);
++  }, [
++    isLoading,
++    user,
++    router,
++    nextUrl,
++    cliCallbackRaw,
++    isDesktopHandoff,
++    isAndroidHandoff,
++    invalidAndroidRequest,
++    beginAndroidHandoff,
++    hasOnboarded,
++    qc,
++    t,
++  ]);
+ 
+   const handleSuccess = async () => {
+     // Read the latest user snapshot directly — the closure's `hasOnboarded`
+@@ -151,23 +222,49 @@ function LoginPageContent() {
+     router.push(await resolveLoggedInDestination(qc, onboarded, list));
+   };
+ 
+-  // Build Google OAuth state: encode platform, next URL, and CLI callback
+-  // params so the callback can redirect to the right place after login.
+-  // CLI callback/state must survive the Google OAuth round-trip so the
+-  // post-login callback page can redirect the JWT back to the CLI's local
+-  // HTTP listener (critical for headless / WSL2 environments).
++  // Build Google OAuth state: encode platform handoff data, the next URL, and
++  // CLI callback params so the callback can resume the selected flow.
+   const googleState = [
+     platform === "desktop" ? "platform:desktop" : "",
++    ...(androidRequestResult.kind === "valid"
++      ? androidOAuthStateParts(androidRequestResult.request)
++      : []),
+     nextUrl ? `next:${nextUrl}` : "",
+-    cliCallbackRaw && validateCliCallback(cliCallbackRaw)
++    platform !== "android" &&
++    cliCallbackRaw &&
++    validateCliCallback(cliCallbackRaw)
+       ? `cli_callback:${encodeURIComponent(cliCallbackRaw)}`
+       : "",
+-    cliState ? `cli_state:${encodeURIComponent(cliState)}` : "",
++    platform !== "android" && cliState
++      ? `cli_state:${encodeURIComponent(cliState)}`
++      : "",
+   ]
+     .filter(Boolean)
+     .join(",") || undefined;
+ 
+   if (invalidCliCallback) return <CliCallbackError />;
++  if (invalidAndroidRequest) {
++    return (
++      <AndroidHandoffCard
++        errorDescription={t(($) => $.web.android_handoff.invalid_request)}
++      />
++    );
++  }
++  if (
++    isAndroidHandoff &&
++    (user || androidPreparing || androidRedirectUrl || androidPrepareError)
++  ) {
++    return (
++      <AndroidHandoffCard
++        redirectUrl={androidRedirectUrl}
++        errorDescription={
++          androidPrepareError
++            ? t(($) => $.web.android_handoff.prepare_failed)
++            : null
++        }
++      />
++    );
++  }
+ 
+   // While the desktop handoff is in progress (or has produced a token/error),
+   // render a dedicated screen instead of flashing the login form or redirecting
+@@ -232,21 +329,32 @@ function LoginPageContent() {
+           : undefined
+       }
+       cliCallback={
+-        cliCallbackRaw && validateCliCallback(cliCallbackRaw)
++        !isAndroidHandoff && cliCallbackRaw && validateCliCallback(cliCallbackRaw)
+           ? { url: cliCallbackRaw, state: cliState }
+           : undefined
+       }
+-      onTokenObtained={setLoggedInCookie}
++      onVerifyCode={
++        isAndroidHandoff
++          ? async (email, code) => {
++              await verifyAndroidEmailCode(email, code);
++              setLoggedInCookie();
++              await beginAndroidHandoff();
++            }
++          : undefined
++      }
++      onTokenObtained={isAndroidHandoff ? undefined : setLoggedInCookie}
+       extra={
+-        <span className="text-caption text-muted-foreground">
+-          {t(($) => $.web.prefer_desktop)}{" "}
+-          <Link
+-            href="/download"
+-            className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground/70"
+-          >
+-            {t(($) => $.web.download)}
+-          </Link>
+-        </span>
++        isAndroidHandoff ? undefined : (
++          <span className="text-caption text-muted-foreground">
++            {t(($) => $.web.prefer_desktop)}{" "}
++            <Link
++              href="/download"
++              className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground/70"
++            >
++              {t(($) => $.web.download)}
++            </Link>
++          </span>
++        )
+       }
+     />
+   );
+diff --git a/apps/web/app/.well-known/assetlinks.json/route.test.ts b/apps/web/app/.well-known/assetlinks.json/route.test.ts
+new file mode 100644
+index 000000000..c67a6ab3b
+--- /dev/null
++++ b/apps/web/app/.well-known/assetlinks.json/route.test.ts
+@@ -0,0 +1,37 @@
++// @vitest-environment node
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { GET } from "./route";
++
++afterEach(() => vi.unstubAllEnvs());
++
++describe("Android domain association", () => {
++  it.each(["", "debug-placeholder", "AA:BB", "AA:".repeat(32)])(
++    "does not publish an invalid fingerprint: %s",
++    async (fingerprint) => {
++      vi.stubEnv("ANDROID_RELEASE_CERT_SHA256", fingerprint);
++      const response = GET();
++      expect(response.status).toBe(503);
++      expect(response.headers.get("Cache-Control")).toBe("no-store");
++      expect(await response.json()).not.toHaveProperty("target");
++    },
++  );
++
++  it("publishes configured public release fingerprints with the exact Android identity", async () => {
++    const first = Array(32).fill("ab").join(":");
++    const second = Array(32).fill("cd").join(":");
++    vi.stubEnv("ANDROID_RELEASE_CERT_SHA256", `${first}, ${second},${first}`);
++    const response = GET();
++    expect(response.status).toBe(200);
++    expect(response.headers.get("Content-Type")).toContain("application/json");
++    expect(await response.json()).toEqual([
++      {
++        relation: ["delegate_permission/common.handle_all_urls"],
++        target: {
++          namespace: "android_app",
++          package_name: "ai.multica.android",
++          sha256_cert_fingerprints: [first.toUpperCase(), second.toUpperCase()],
++        },
++      },
++    ]);
++  });
++});
+diff --git a/apps/web/app/.well-known/assetlinks.json/route.ts b/apps/web/app/.well-known/assetlinks.json/route.ts
+new file mode 100644
+index 000000000..0e9af66ab
+--- /dev/null
++++ b/apps/web/app/.well-known/assetlinks.json/route.ts
+@@ -0,0 +1,30 @@
++export const dynamic = "force-dynamic";
++
++export function GET(): Response {
++  const fingerprints = (process.env.ANDROID_RELEASE_CERT_SHA256 ?? "")
++    .split(",")
++    .map((value) => value.trim().toUpperCase())
++    .filter(Boolean);
++  if (
++    fingerprints.length === 0 ||
++    fingerprints.some((value) => !/^(?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(value))
++  ) {
++    return Response.json(
++      { error: "Android release certificate association is not configured" },
++      { status: 503, headers: { "Cache-Control": "no-store" } },
++    );
++  }
++  return Response.json(
++    [
++      {
++        relation: ["delegate_permission/common.handle_all_urls"],
++        target: {
++          namespace: "android_app",
++          package_name: "ai.multica.android",
++          sha256_cert_fingerprints: [...new Set(fingerprints)],
++        },
++      },
++    ],
++    { headers: { "Cache-Control": "public, max-age=300" } },
++  );
++}
+diff --git a/apps/web/app/auth/android/callback/page.test.tsx b/apps/web/app/auth/android/callback/page.test.tsx
+new file mode 100644
+index 000000000..288fd280f
+--- /dev/null
++++ b/apps/web/app/auth/android/callback/page.test.tsx
+@@ -0,0 +1,95 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { render, screen, waitFor } from "@testing-library/react";
++import { I18nProvider } from "@multica/core/i18n/react";
++import enCommon from "@multica/views/locales/en/common.json";
++import enAuth from "@multica/views/locales/en/auth.json";
++import enSettings from "@multica/views/locales/en/settings.json";
++
++const { searchParamsState } = vi.hoisted(() => ({
++  searchParamsState: { params: new URLSearchParams() },
++}));
++
++vi.mock("next/navigation", () => ({
++  useSearchParams: () => searchParamsState.params,
++}));
++
++import AndroidCallbackPage from "./page";
++
++const STATE = "A".repeat(43);
++const REDIRECT_URL = `multica-android://auth/callback?code=one-time-code&state=${STATE}`;
++const originalLocation = window.location;
++
++function renderPage() {
++  return render(
++    <I18nProvider
++      locale="en"
++      resources={{
++        en: { common: enCommon, auth: enAuth, settings: enSettings },
++      }}
++    >
++      <AndroidCallbackPage />
++    </I18nProvider>,
++  );
++}
++
++afterEach(() => {
++  Object.defineProperty(window, "location", {
++    configurable: true,
++    value: originalLocation,
++  });
++});
++
++describe("HTTPS Android callback page", () => {
++  it("opens only the fixed Android custom scheme and keeps a fallback button", async () => {
++    searchParamsState.params = new URLSearchParams({
++      code: "one-time-code",
++      state: STATE,
++    });
++    const hrefSetter = vi.fn();
++    Object.defineProperty(window, "location", {
++      configurable: true,
++      value: {
++        ...originalLocation,
++        set href(value: string) {
++          hrefSetter(value);
++        },
++      },
++    });
++
++    renderPage();
++
++    await waitFor(() => {
++      expect(hrefSetter).toHaveBeenCalledWith(REDIRECT_URL);
++    });
++    expect(
++      screen.getByRole("button", { name: "Open Multica" }),
++    ).toBeInTheDocument();
++  });
++
++  it("does not redirect malformed or token-bearing callback data", () => {
++    searchParamsState.params = new URLSearchParams({
++      code: "one-time-code",
++      state: STATE,
++      token: "must-not-pass",
++    });
++    const hrefSetter = vi.fn();
++    Object.defineProperty(window, "location", {
++      configurable: true,
++      value: {
++        ...originalLocation,
++        set href(value: string) {
++          hrefSetter(value);
++        },
++      },
++    });
++
++    renderPage();
++
++    expect(hrefSetter).not.toHaveBeenCalled();
++    expect(
++      screen.getByText(
++        "The Android sign-in request is invalid. Return to the app and try again.",
++      ),
++    ).toBeInTheDocument();
++  });
++});
+diff --git a/apps/web/app/auth/android/callback/page.tsx b/apps/web/app/auth/android/callback/page.tsx
+new file mode 100644
+index 000000000..10b729399
+--- /dev/null
++++ b/apps/web/app/auth/android/callback/page.tsx
+@@ -0,0 +1,36 @@
++"use client";
++
++import { Suspense, useEffect } from "react";
++import { useSearchParams } from "next/navigation";
++import { AndroidHandoffCard } from "@/features/auth/android-handoff-card";
++import { androidCallbackUrlFromSearchParams } from "@/features/auth/android-auth";
++import { useT } from "@multica/views/i18n";
++
++function AndroidCallbackContent() {
++  const { t } = useT("auth");
++  const searchParams = useSearchParams();
++  const redirectUrl = androidCallbackUrlFromSearchParams(searchParams);
++
++  useEffect(() => {
++    if (redirectUrl) window.location.href = redirectUrl;
++  }, [redirectUrl]);
++
++  return (
++    <AndroidHandoffCard
++      redirectUrl={redirectUrl}
++      errorDescription={
++        redirectUrl
++          ? null
++          : t(($) => $.web.android_handoff.invalid_request)
++      }
++    />
++  );
++}
++
++export default function AndroidCallbackPage() {
++  return (
++    <Suspense fallback={null}>
++      <AndroidCallbackContent />
++    </Suspense>
++  );
++}
+diff --git a/apps/web/app/auth/callback/callback-error.ts b/apps/web/app/auth/callback/callback-error.ts
+index 05cf1ddeb..a67b12a1d 100644
+--- a/apps/web/app/auth/callback/callback-error.ts
++++ b/apps/web/app/auth/callback/callback-error.ts
+@@ -4,6 +4,8 @@ export type CallbackError =
+   | {
+       kind:
+         | "invalid_cli_callback"
++        | "invalid_android_request"
++        | "android_prepare_failed"
+         | "missing_code"
+         | "access_denied"
+         | "login_failed"
+diff --git a/apps/web/app/auth/callback/page.test.tsx b/apps/web/app/auth/callback/page.test.tsx
+index b5b1acf98..bb5e9e73b 100644
+--- a/apps/web/app/auth/callback/page.test.tsx
++++ b/apps/web/app/auth/callback/page.test.tsx
+@@ -1,3 +1,4 @@
++import { StrictMode } from "react";
+ import { describe, it, expect, vi, beforeEach } from "vitest";
+ import { render, screen, waitFor } from "@testing-library/react";
+ import type { SupportedLocale } from "@multica/core/i18n";
+@@ -14,6 +15,9 @@ const {
+   mockListWorkspaces,
+   mockListMyInvitations,
+   mockSetQueryData,
++  mockLoginAndroidWithGoogle,
++  mockPrepareAndroidHandoff,
++  mockSetLoggedInCookie,
+   mockQueryClient,
+ } = vi.hoisted(() => {
+   const mockPush = vi.fn();
+@@ -26,6 +30,9 @@ const {
+     mockListWorkspaces: vi.fn(),
+     mockListMyInvitations: vi.fn(),
+     mockSetQueryData,
++    mockLoginAndroidWithGoogle: vi.fn(),
++    mockPrepareAndroidHandoff: vi.fn(),
++    mockSetLoggedInCookie: vi.fn(),
+     mockQueryClient: { setQueryData: mockSetQueryData },
+   };
+ });
+@@ -107,8 +114,52 @@ vi.mock("@multica/core/api", async () => {
+   };
+ });
+ 
++vi.mock("@/features/auth/auth-cookie", () => ({
++  setLoggedInCookie: mockSetLoggedInCookie,
++}));
++
++vi.mock("@/features/auth/android-auth", async () => {
++  const actual =
++    await vi.importActual<typeof import("@/features/auth/android-auth")>(
++      "@/features/auth/android-auth",
++    );
++  return {
++    ...actual,
++    loginAndroidWithGoogle: mockLoginAndroidWithGoogle,
++    prepareAndroidHandoff: mockPrepareAndroidHandoff,
++  };
++});
++
+ import CallbackPage from "./page";
+ 
++const ANDROID_STATE = "A".repeat(43);
++const ANDROID_CHALLENGE = `${"B".repeat(42)}A`;
++const ANDROID_REDIRECT = `multica-android://auth/callback?code=handoff-code&state=${ANDROID_STATE}`;
++const ANDROID_OAUTH_STATE =
++  `platform:android,android_state:${ANDROID_STATE},android_challenge:${ANDROID_CHALLENGE}`;
++
++function captureLocationHref() {
++  const originalLocation = window.location;
++  const setter = vi.fn();
++  Object.defineProperty(window, "location", {
++    configurable: true,
++    value: {
++      ...originalLocation,
++      set href(value: string) {
++        setter(value);
++      },
++    },
++  });
++  return {
++    setter,
++    restore: () =>
++      Object.defineProperty(window, "location", {
++        configurable: true,
++        value: originalLocation,
++      }),
++  };
++}
++
+ function renderCallback(locale: SupportedLocale = "en") {
+   return render(
+     <I18nProvider locale={locale} resources={RESOURCES}>
+@@ -138,6 +189,9 @@ describe("CallbackPage", () => {
+     mockLoginWithGoogle.mockResolvedValue(makeUser());
+     mockListWorkspaces.mockResolvedValue([]);
+     mockListMyInvitations.mockResolvedValue([]);
++    mockLoginAndroidWithGoogle.mockResolvedValue(makeUser());
++    mockPrepareAndroidHandoff.mockResolvedValue(ANDROID_REDIRECT);
++    window.localStorage.clear();
+   });
+ 
+   it("renders callback errors in the selected locale", async () => {
+@@ -256,6 +310,89 @@ describe("CallbackPage", () => {
+     expect(mockPush).not.toHaveBeenCalled();
+   });
+ 
++  describe("Android Google OAuth handoff", () => {
++    it("exchanges the one-use Google code once under StrictMode effect replay", async () => {
++      mockSearchParams.set("state", ANDROID_OAUTH_STATE);
++      const location = captureLocationHref();
++      try {
++        render(
++          <StrictMode>
++            <I18nProvider locale="en" resources={RESOURCES}>
++              <CallbackPage />
++            </I18nProvider>
++          </StrictMode>,
++        );
++        await waitFor(() => expect(location.setter).toHaveBeenCalledWith(ANDROID_REDIRECT));
++        expect(mockLoginAndroidWithGoogle).toHaveBeenCalledTimes(1);
++        expect(mockPrepareAndroidHandoff).toHaveBeenCalledTimes(1);
++      } finally {
++        location.restore();
++      }
++    });
++    it("uses cookie-only Google login, restores state, and prepares the app code", async () => {
++      const { api: mockedApi } = await import("@multica/core/api");
++      mockSearchParams.set("state", ANDROID_OAUTH_STATE);
++      const location = captureLocationHref();
++      const storageSet = vi.spyOn(Storage.prototype, "setItem");
++
++      try {
++        renderCallback();
++
++        await waitFor(() => {
++          expect(mockLoginAndroidWithGoogle).toHaveBeenCalledWith(
++            "test-code",
++            expect.stringContaining("/auth/callback"),
++          );
++          expect(mockPrepareAndroidHandoff).toHaveBeenCalledWith({
++            state: ANDROID_STATE,
++            codeChallenge: ANDROID_CHALLENGE,
++          });
++          expect(location.setter).toHaveBeenCalledWith(ANDROID_REDIRECT);
++        });
++        expect(mockSetLoggedInCookie).toHaveBeenCalledTimes(1);
++        expect(mockLoginWithGoogle).not.toHaveBeenCalled();
++        expect(mockedApi.googleLogin).not.toHaveBeenCalled();
++        expect(storageSet).not.toHaveBeenCalled();
++        expect(mockPush).not.toHaveBeenCalled();
++      } finally {
++        storageSet.mockRestore();
++        location.restore();
++      }
++    });
++
++    it("blocks malformed Android OAuth state before any login exchange", async () => {
++      mockSearchParams.set(
++        "state",
++        `platform:android,android_state:bad,android_challenge:${ANDROID_CHALLENGE}`,
++      );
++
++      renderCallback();
++
++      expect(
++        await screen.findByText(
++          "The Android sign-in request is invalid. Return to the app and try again.",
++        ),
++      ).toBeInTheDocument();
++      expect(mockLoginAndroidWithGoogle).not.toHaveBeenCalled();
++      expect(mockLoginWithGoogle).not.toHaveBeenCalled();
++      expect(mockPrepareAndroidHandoff).not.toHaveBeenCalled();
++    });
++
++    it("shows a localized preparation error without exposing a token", async () => {
++      mockSearchParams.set("state", ANDROID_OAUTH_STATE);
++      mockPrepareAndroidHandoff.mockRejectedValue(new Error("internal detail"));
++
++      renderCallback();
++
++      expect(
++        await screen.findByText("Failed to prepare Android sign-in"),
++      ).toBeInTheDocument();
++      expect(screen.queryByText("internal detail")).not.toBeInTheDocument();
++      expect(mockLoginAndroidWithGoogle).toHaveBeenCalledTimes(1);
++      expect(mockSetLoggedInCookie).toHaveBeenCalledTimes(1);
++    });
++  });
++
+   it("unonboarded user honors a safe next= (e.g. /invite/{id}) so invitees aren't trapped", async () => {
+     mockSearchParams.set("state", "next:/invite/abc123");
+     renderCallback();
+diff --git a/apps/web/app/auth/callback/page.tsx b/apps/web/app/auth/callback/page.tsx
+index 118051b1f..4d2ce49b6 100644
+--- a/apps/web/app/auth/callback/page.tsx
++++ b/apps/web/app/auth/callback/page.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { Suspense, useEffect, useState } from "react";
++import { Suspense, useEffect, useRef, useState } from "react";
+ import { useSearchParams, useRouter } from "next/navigation";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { sanitizeNextUrl, useAuthStore } from "@multica/core/auth";
+@@ -20,6 +20,13 @@ import { Button } from "@multica/ui/components/ui/button";
+ import { useT } from "@multica/views/i18n";
+ import { Loader2 } from "@multica/ui/icons";
+ import { CliCallbackError } from "@/features/auth/cli-callback-error";
++import { AndroidHandoffCard } from "@/features/auth/android-handoff-card";
++import {
++  loginAndroidWithGoogle,
++  prepareAndroidHandoff,
++  readAndroidOAuthRequest,
++} from "@/features/auth/android-auth";
++import { setLoggedInCookie } from "@/features/auth/auth-cookie";
+ import { callbackErrorFrom, type CallbackError } from "./callback-error";
+ 
+ const authLogger = createLogger("auth.callback");
+@@ -32,6 +39,9 @@ function CallbackContent() {
+   const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
+   const [error, setError] = useState<CallbackError | null>(null);
+   const [desktopToken, setDesktopToken] = useState<string | null>(null);
++  const [androidPending, setAndroidPending] = useState(false);
++  const [androidRedirectUrl, setAndroidRedirectUrl] = useState<string | null>(null);
++  const androidAttemptRef = useRef<string | null>(null);
+ 
+   useEffect(() => {
+     const code = searchParams.get("code");
+@@ -53,6 +63,44 @@ function CallbackContent() {
+ 
+     const state = searchParams.get("state") || "";
+     const stateParts = state.split(",");
++    const androidRequestResult = readAndroidOAuthRequest(stateParts);
++    if (androidRequestResult.kind === "invalid") {
++      setError({ kind: "invalid_android_request" });
++      return;
++    }
++    if (androidRequestResult.kind === "valid") {
++      const attempt = `${code}:${state}`;
++      if (androidAttemptRef.current === attempt) return;
++      androidAttemptRef.current = attempt;
++      const redirectUri = `${window.location.origin}/auth/callback`;
++      setAndroidPending(true);
++      void (async () => {
++        try {
++          await loginAndroidWithGoogle(code, redirectUri);
++          setLoggedInCookie();
++        } catch (err) {
++          authLogger.error("Android Google OAuth callback failed");
++          setAndroidPending(false);
++          setError(callbackErrorFrom(err));
++          return;
++        }
++
++        try {
++          const redirectUrl = await prepareAndroidHandoff(
++            androidRequestResult.request,
++          );
++          setAndroidRedirectUrl(redirectUrl);
++          setAndroidPending(false);
++          window.location.href = redirectUrl;
++        } catch {
++          authLogger.error("Android sign-in preparation failed");
++          setAndroidPending(false);
++          setError({ kind: "android_prepare_failed" });
++        }
++      })();
++      return;
++    }
++
+     const isDesktop = stateParts.includes("platform:desktop");
+     const nextPart = stateParts.find((p) => p.startsWith("next:"));
+     // Strip "next:" prefix, then drop anything that isn't a safe relative path
+@@ -167,6 +215,10 @@ function CallbackContent() {
+     switch (error.kind) {
+       case "invalid_cli_callback":
+         return null;
++      case "invalid_android_request":
++        return t(($) => $.web.android_handoff.invalid_request);
++      case "android_prepare_failed":
++        return t(($) => $.web.android_handoff.prepare_failed);
+       case "raw":
+         return error.text;
+       case "missing_code":
+@@ -188,6 +240,10 @@ function CallbackContent() {
+     }
+   })();
+ 
++  if (!error && (androidPending || androidRedirectUrl)) {
++    return <AndroidHandoffCard redirectUrl={androidRedirectUrl} />;
++  }
++
+   if (desktopToken) {
+     return (
+       <div className="flex min-h-screen items-center justify-center">
+diff --git a/apps/web/config/runtime-urls.ts b/apps/web/config/runtime-urls.ts
+index fbf7c0af4..78ee9b92a 100644
+--- a/apps/web/config/runtime-urls.ts
++++ b/apps/web/config/runtime-urls.ts
+@@ -149,6 +149,8 @@ export function runtimeRewriteDestination(
+ function isBackendAuthPath(pathname: string): boolean {
+   if (pathname === "/auth/callback") return false;
+   if (pathname.startsWith("/auth/callback/")) return false;
++  if (pathname === "/auth/android/callback") return false;
++  if (pathname.startsWith("/auth/android/callback/")) return false;
+   if (pathname === "/auth/hg-sso/callback") return false;
+   if (pathname.startsWith("/auth/hg-sso/callback/")) return false;
+   return pathname === "/auth" || pathname.startsWith("/auth/");
+diff --git a/apps/web/eslint.config.mjs b/apps/web/eslint.config.mjs
+index 7c653da8b..1d09e597a 100644
+--- a/apps/web/eslint.config.mjs
++++ b/apps/web/eslint.config.mjs
+@@ -28,6 +28,10 @@ export default [
+     files: ["**/*.test.{ts,tsx}", "**/test/**/*.{ts,tsx}"],
+     rules: {
+       "react/display-name": "off",
++      "import-x/no-extraneous-dependencies": [
++        "error",
++        { devDependencies: true, peerDependencies: true },
++      ],
+     },
+   },
+ ];
+diff --git a/apps/web/features/auth/android-auth.test.ts b/apps/web/features/auth/android-auth.test.ts
+new file mode 100644
+index 000000000..3e9d3a099
+--- /dev/null
++++ b/apps/web/features/auth/android-auth.test.ts
+@@ -0,0 +1,328 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { setSchemaLogger } from "@multica/core/api";
++import { noopLogger } from "@multica/core/logger";
++
++afterEach(() => setSchemaLogger(noopLogger));
++
++const { mockGetBaseUrl } = vi.hoisted(() => ({
++  mockGetBaseUrl: vi.fn(() => "https://api.example.test"),
++}));
++
++vi.mock("@multica/core/api", async () => {
++  const actual = await vi.importActual<typeof import("@multica/core/api")>(
++    "@multica/core/api",
++  );
++  return {
++    ...actual,
++    api: { getBaseUrl: mockGetBaseUrl },
++  };
++});
++
++import {
++  ANDROID_APP_ID,
++  androidCallbackUrlFromSearchParams,
++  androidOAuthStateParts,
++  loginAndroidWithGoogle,
++  isSafeAndroidRedirect,
++  prepareAndroidHandoff,
++  readAndroidLoginRequest,
++  readAndroidOAuthRequest,
++  verifyAndroidEmailCode,
++} from "./android-auth";
++
++const STATE = "A".repeat(43);
++const CHALLENGE = `${"B".repeat(42)}A`;
++const REDIRECT_URL = `multica-android://auth/callback?code=one-time-code&state=${STATE}`;
++
++function jsonResponse(body: unknown, status = 200) {
++  return new Response(JSON.stringify(body), {
++    status,
++    headers: { "Content-Type": "application/json" },
++  });
++}
++
++function clearCookies() {
++  for (const cookie of document.cookie.split(";")) {
++    const name = cookie.split("=")[0]?.trim();
++    if (name) document.cookie = `${name}=; path=/; max-age=0`;
++  }
++}
++
++function requestInit(fetchMock: ReturnType<typeof vi.fn>) {
++  const call = fetchMock.mock.calls[0];
++  if (!call) throw new Error("Expected fetch to be called");
++  return call[1] as RequestInit;
++}
++
++describe("Android auth request validation", () => {
++  it("accepts canonical state values from 16 through 96 bytes and a 32-byte challenge", () => {
++    const sixteenByteState = "A".repeat(22);
++    const ninetySixByteState = "A".repeat(128);
++
++    for (const state of [sixteenByteState, STATE, ninetySixByteState]) {
++      const result = readAndroidLoginRequest(
++        new URLSearchParams({
++          platform: "android",
++          android_state: state,
++          android_challenge: CHALLENGE,
++        }),
++      );
++      expect(result).toEqual({
++        kind: "valid",
++        request: { state, codeChallenge: CHALLENGE },
++      });
++    }
++  });
++
++  it.each([
++    ["short state", "A".repeat(21), CHALLENGE],
++    ["non-canonical state", "A".repeat(21) + "B", CHALLENGE],
++    ["padded state", `${STATE}=`, CHALLENGE],
++    ["short challenge", STATE, "A".repeat(42)],
++    ["non-canonical challenge", STATE, "B".repeat(43)],
++  ])("rejects a %s", (_case, state, challenge) => {
++    expect(
++      readAndroidLoginRequest(
++        new URLSearchParams({
++          platform: "android",
++          android_state: state,
++          android_challenge: challenge,
++        }),
++      ),
++    ).toEqual({ kind: "invalid" });
++  });
++
++  it("allows only the custom scheme or a strict same-origin HTTPS app link", () => {
++    expect(isSafeAndroidRedirect(REDIRECT_URL, "http://localhost:3000")).toBe(
++      true,
++    );
++    const appLink =
++      `https://app.example.test/auth/android/callback?code=one-time-code&state=${STATE}`;
++    expect(isSafeAndroidRedirect(appLink, "https://app.example.test")).toBe(
++      true,
++    );
++    expect(isSafeAndroidRedirect(appLink, "http://app.example.test")).toBe(
++      false,
++    );
++    expect(isSafeAndroidRedirect(appLink, "https://other.example.test")).toBe(
++      false,
++    );
++    expect(
++      isSafeAndroidRedirect(
++        `${appLink}&token=must-not-pass`,
++        "https://app.example.test",
++      ),
++    ).toBe(false);
++    expect(
++      isSafeAndroidRedirect(
++        `https://app.example.test/auth/android/exchange?code=x&state=${STATE}`,
++        "https://app.example.test",
++      ),
++    ).toBe(false);
++  });
++
++  it.each([
++    `multica-android://user@auth/callback?code=x&state=${STATE}`,
++    `multica-android://auth:8080/callback?code=x&state=${STATE}`,
++    `https://user:password@app.example.test/auth/android/callback?code=x&state=${STATE}`,
++  ])("rejects credentials or a custom-scheme port in a redirect", (value) => {
++    expect(isSafeAndroidRedirect(value, "https://app.example.test")).toBe(false);
++  });
++
++  it("round-trips Android fields through Google OAuth state", () => {
++    const parts = androidOAuthStateParts({
++      state: STATE,
++      codeChallenge: CHALLENGE,
++    });
++    expect(readAndroidOAuthRequest(parts)).toEqual({
++      kind: "valid",
++      request: { state: STATE, codeChallenge: CHALLENGE },
++    });
++  });
++
++  it("rejects duplicate or malformed Android OAuth state fields", () => {
++    expect(
++      readAndroidOAuthRequest([
++        "platform:android",
++        `android_state:${STATE}`,
++        `android_state:${STATE}`,
++        `android_challenge:${CHALLENGE}`,
++      ]),
++    ).toEqual({ kind: "invalid" });
++    expect(
++      readAndroidOAuthRequest([
++        "platform:android",
++        "android_state:%broken",
++        `android_challenge:${CHALLENGE}`,
++      ]),
++    ).toEqual({ kind: "invalid" });
++  });
++});
++
++describe("Android cookie-only requests", () => {
++  beforeEach(() => {
++    vi.restoreAllMocks();
++    clearCookies();
++    localStorage.clear();
++  });
++
++  it("verifies an email code with cookie_only and no bearer token", async () => {
++    const fetchMock = vi
++      .spyOn(globalThis, "fetch")
++      .mockResolvedValue(jsonResponse({ user: { id: "user-1" } }));
++
++    await expect(
++      verifyAndroidEmailCode("person@example.com", "123456"),
++    ).resolves.toMatchObject({ id: "user-1" });
++
++    expect(fetchMock).toHaveBeenCalledWith(
++      "https://api.example.test/auth/verify-code",
++      expect.objectContaining({
++        method: "POST",
++        credentials: "include",
++      }),
++    );
++    const init = requestInit(fetchMock);
++    expect(JSON.parse(String(init.body))).toEqual({
++      email: "person@example.com",
++      code: "123456",
++      cookie_only: true,
++    });
++    expect(new Headers(init.headers).has("Authorization")).toBe(false);
++    expect(localStorage.length).toBe(0);
++  });
++
++  it("exchanges a Google code with cookie_only and no bearer token", async () => {
++    const fetchMock = vi
++      .spyOn(globalThis, "fetch")
++      .mockResolvedValue(jsonResponse({ user: { id: "user-1" } }));
++
++    await loginAndroidWithGoogle(
++      "google-code",
++      "https://app.example.test/auth/callback",
++    );
++
++    expect(fetchMock).toHaveBeenCalledWith(
++      "https://api.example.test/auth/google",
++      expect.any(Object),
++    );
++    const init = requestInit(fetchMock);
++    expect(JSON.parse(String(init.body))).toEqual({
++      code: "google-code",
++      redirect_uri: "https://app.example.test/auth/callback",
++      cookie_only: true,
++    });
++    expect(new Headers(init.headers).has("Authorization")).toBe(false);
++    expect(localStorage.length).toBe(0);
++  });
++
++  it("prepares the handoff with cookies, the session CSRF value, and no Authorization", async () => {
++    document.cookie = "multica_csrf=token-bound; path=/";
++    document.cookie = "multica_csrf_session=session-bound; path=/";
++    const fetchMock = vi
++      .spyOn(globalThis, "fetch")
++      .mockResolvedValue(jsonResponse({ redirect_url: REDIRECT_URL }));
++
++    await expect(
++      prepareAndroidHandoff({ state: STATE, codeChallenge: CHALLENGE }),
++    ).resolves.toBe(REDIRECT_URL);
++
++    expect(fetchMock).toHaveBeenCalledWith(
++      "https://api.example.test/auth/android/prepare",
++      expect.objectContaining({
++        method: "POST",
++        credentials: "include",
++      }),
++    );
++    const init = requestInit(fetchMock);
++    const headers = new Headers(init.headers);
++    expect(headers.get("X-CSRF-Token")).toBe("session-bound");
++    expect(headers.has("Authorization")).toBe(false);
++    expect(JSON.parse(String(init.body))).toEqual({
++      state: STATE,
++      code_challenge: CHALLENGE,
++      app_id: ANDROID_APP_ID,
++    });
++    expect(localStorage.length).toBe(0);
++  });
++
++  it("fails before fetching when the session has no readable CSRF cookie", async () => {
++    const fetchMock = vi.spyOn(globalThis, "fetch");
++
++    await expect(
++      prepareAndroidHandoff({ state: STATE, codeChallenge: CHALLENGE }),
++    ).rejects.toThrow("Missing CSRF cookie");
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it.each([
++    ["wrong scheme", `https://evil.example/callback?code=x&state=${STATE}`],
++    [
++      "token parameter",
++      `multica-android://auth/callback?code=x&state=${STATE}&token=jwt`,
++    ],
++    [
++      "mismatched state",
++      `multica-android://auth/callback?code=x&state=${"C".repeat(42)}A`,
++    ],
++  ])("rejects a %s in the prepare response", async (_case, redirectUrl) => {
++    document.cookie = "multica_csrf=csrf; path=/";
++    vi.spyOn(globalThis, "fetch").mockResolvedValue(
++      jsonResponse({ redirect_url: redirectUrl }),
++    );
++
++    await expect(
++      prepareAndroidHandoff({ state: STATE, codeChallenge: CHALLENGE }),
++    ).rejects.toThrow();
++  });
++
++  it("does not log a code-bearing response when redirect validation fails", async () => {
++    const warn = vi.fn();
++    setSchemaLogger({ ...noopLogger, warn });
++    document.cookie = "multica_csrf=csrf; path=/";
++    const secret = "one-use-sensitive-code";
++    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({
++      redirect_url: `https://attacker.example/?code=${secret}&state=${STATE}`,
++    }));
++    await expect(prepareAndroidHandoff({ state: STATE, codeChallenge: CHALLENGE })).rejects.toThrow();
++    expect(warn).toHaveBeenCalledOnce();
++    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
++  });
++
++  it("preserves actionable error codes without retaining credential-bearing error payloads", async () => {
++    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({
++      error: "account disabled", code: "account_disabled", token: "must-not-retain", code_verifier: "must-not-retain",
++    }, 403));
++    const error = await loginAndroidWithGoogle("google-code", "https://app.example.test/auth/callback").catch((error: unknown) => error);
++    expect(error).toMatchObject({ status: 403, body: { code: "account_disabled" } });
++    expect(JSON.stringify(error)).not.toContain("must-not-retain");
++  });
++
++  it("surfaces backend errors without accepting a malformed success body", async () => {
++    vi.spyOn(globalThis, "fetch").mockResolvedValue(
++      jsonResponse({ error: "code expired" }, 400),
++    );
++
++    await expect(
++      verifyAndroidEmailCode("person@example.com", "000000"),
++    ).rejects.toMatchObject({ status: 400, message: "code expired" });
++  });
++});
++
++describe("HTTPS Android callback safety", () => {
++  it("builds only the fixed custom-scheme callback", () => {
++    expect(
++      androidCallbackUrlFromSearchParams(
++        new URLSearchParams({ code: "one-time-code", state: STATE }),
++      ),
++    ).toBe(REDIRECT_URL);
++  });
++
++  it.each([
++    new URLSearchParams({ state: STATE }),
++    new URLSearchParams({ code: "one-time-code", state: "not-base64url" }),
++    new URLSearchParams({ code: "one-time-code", state: STATE, token: "jwt" }),
++  ])("rejects missing, malformed, or extra callback data", (params) => {
++    expect(androidCallbackUrlFromSearchParams(params)).toBeNull();
++  });
++});
+diff --git a/apps/web/features/auth/android-auth.ts b/apps/web/features/auth/android-auth.ts
+new file mode 100644
+index 000000000..8a7a40edf
+--- /dev/null
++++ b/apps/web/features/auth/android-auth.ts
+@@ -0,0 +1,322 @@
++import { api, ApiError, parseWithFallback } from "@multica/core/api";
++import { UserSchema } from "@multica/core/api/schemas";
++import type { User } from "@multica/core/types";
++import { z } from "zod";
++
++export const ANDROID_APP_ID = "ai.multica.android";
++
++const BASE64URL_ALPHABET =
++  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
++const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
++const MAX_AUTH_CODE_LENGTH = 2048;
++
++function isCanonicalBase64Url(
++  value: string,
++  minDecodedBytes: number,
++  maxDecodedBytes: number,
++): boolean {
++  if (!BASE64URL_PATTERN.test(value)) return false;
++
++  const remainder = value.length % 4;
++  if (remainder === 1) return false;
++
++  const decodedBytes = Math.floor((value.length * 6) / 8);
++  if (decodedBytes < minDecodedBytes || decodedBytes > maxDecodedBytes) {
++    return false;
++  }
++
++  const lastValue = BASE64URL_ALPHABET.indexOf(value.at(-1) ?? "");
++  if (lastValue < 0) return false;
++  if (remainder === 2 && lastValue % 16 !== 0) return false;
++  if (remainder === 3 && lastValue % 4 !== 0) return false;
++  return true;
++}
++
++function isAndroidState(value: string): boolean {
++  return isCanonicalBase64Url(value, 16, 96);
++}
++
++function isAndroidChallenge(value: string): boolean {
++  return isCanonicalBase64Url(value, 32, 32);
++}
++
++const AndroidLoginRequestSchema = z.object({
++  state: z.string().refine(isAndroidState),
++  codeChallenge: z.string().refine(isAndroidChallenge),
++});
++
++const CookieOnlyLoginResponseSchema = z.object({
++  user: UserSchema,
++});
++
++const ErrorResponseSchema = z.object({
++  error: z.string().optional(),
++  code: z.enum([
++    "account_disabled",
++    "signup_prohibited",
++    "email_not_allowed",
++    "google_account_no_email",
++    "oauth_code_invalid",
++  ]).optional().catch(undefined),
++});
++
++export function isSafeAndroidRedirect(
++  value: string,
++  frontendOrigin: string,
++): boolean {
++  try {
++    const url = new URL(value);
++    const origin = new URL(frontendOrigin);
++    const keys = [...url.searchParams.keys()];
++    const code = url.searchParams.get("code") ?? "";
++    const hasSafeCallbackParams =
++      url.hash === "" &&
++      url.username === "" &&
++      url.password === "" &&
++      url.searchParams.getAll("code").length === 1 &&
++      code.length > 0 &&
++      code.length <= MAX_AUTH_CODE_LENGTH &&
++      url.searchParams.getAll("state").length === 1 &&
++      isAndroidState(url.searchParams.get("state") ?? "") &&
++      keys.every((key) => key === "code" || key === "state");
++    const isCustomScheme =
++      url.protocol === "multica-android:" &&
++      url.hostname === "auth" &&
++      url.port === "" &&
++      url.pathname === "/callback";
++    const isSameOriginAppLink =
++      origin.protocol === "https:" &&
++      url.protocol === "https:" &&
++      url.origin === origin.origin &&
++      url.pathname === "/auth/android/callback";
++    return hasSafeCallbackParams && (isCustomScheme || isSameOriginAppLink);
++  } catch {
++    return false;
++  }
++}
++
++function androidPrepareResponseSchema(frontendOrigin: string) {
++  return z.object({
++    redirect_url: z
++      .string()
++      .refine((value) => isSafeAndroidRedirect(value, frontendOrigin)),
++  });
++}
++
++const AndroidCallbackQuerySchema = z.object({
++  code: z.string().min(1).max(MAX_AUTH_CODE_LENGTH),
++  state: z.string().refine(isAndroidState),
++});
++
++export interface AndroidLoginRequest {
++  state: string;
++  codeChallenge: string;
++}
++
++export type AndroidLoginRequestResult =
++  | { kind: "none" }
++  | { kind: "invalid" }
++  | { kind: "valid"; request: AndroidLoginRequest };
++
++interface SearchParamsReader {
++  get(name: string): string | null;
++  getAll(name: string): string[];
++  keys(): IterableIterator<string>;
++}
++
++export function readAndroidLoginRequest(
++  searchParams: Pick<SearchParamsReader, "get" | "getAll">,
++): AndroidLoginRequestResult {
++  if (searchParams.get("platform") !== "android") return { kind: "none" };
++  if (
++    searchParams.getAll("android_state").length !== 1 ||
++    searchParams.getAll("android_challenge").length !== 1
++  ) {
++    return { kind: "invalid" };
++  }
++
++  const parsed = AndroidLoginRequestSchema.safeParse({
++    state: searchParams.get("android_state"),
++    codeChallenge: searchParams.get("android_challenge"),
++  });
++  return parsed.success
++    ? { kind: "valid", request: parsed.data }
++    : { kind: "invalid" };
++}
++
++export function androidOAuthStateParts(request: AndroidLoginRequest): string[] {
++  return [
++    "platform:android",
++    `android_state:${encodeURIComponent(request.state)}`,
++    `android_challenge:${encodeURIComponent(request.codeChallenge)}`,
++  ];
++}
++
++export function readAndroidOAuthRequest(
++  stateParts: string[],
++): AndroidLoginRequestResult {
++  if (!stateParts.includes("platform:android")) return { kind: "none" };
++
++  const stateValues = stateParts.filter((part) =>
++    part.startsWith("android_state:"),
++  );
++  const challengeValues = stateParts.filter((part) =>
++    part.startsWith("android_challenge:"),
++  );
++  if (stateValues.length !== 1 || challengeValues.length !== 1) {
++    return { kind: "invalid" };
++  }
++
++  try {
++    const parsed = AndroidLoginRequestSchema.safeParse({
++      state: decodeURIComponent(
++        stateValues[0]!.slice("android_state:".length),
++      ),
++      codeChallenge: decodeURIComponent(
++        challengeValues[0]!.slice("android_challenge:".length),
++      ),
++    });
++    return parsed.success
++      ? { kind: "valid", request: parsed.data }
++      : { kind: "invalid" };
++  } catch {
++    return { kind: "invalid" };
++  }
++}
++
++function apiUrl(path: string): string {
++  return `${api.getBaseUrl()}${path}`;
++}
++
++async function readJson(response: Response): Promise<unknown> {
++  try {
++    return await response.json();
++  } catch {
++    return undefined;
++  }
++}
++
++async function assertOk(response: Response, raw: unknown): Promise<void> {
++  if (response.ok) return;
++  const parsed = parseWithFallback<{ error?: string; code?: string }>(
++    raw,
++    ErrorResponseSchema,
++    {},
++    { endpoint: `${response.status} authentication error`, sensitive: true },
++  );
++  throw new ApiError(
++    parsed.error || `API error: ${response.status} ${response.statusText}`,
++    response.status,
++    response.statusText,
++    parsed.code ? { code: parsed.code } : undefined,
++  );
++}
++
++async function cookieOnlyLogin(
++  path: "/auth/verify-code" | "/auth/google",
++  body: Record<string, unknown>,
++): Promise<User> {
++  const response = await fetch(apiUrl(path), {
++    method: "POST",
++    credentials: "include",
++    headers: { "Content-Type": "application/json" },
++    body: JSON.stringify({ ...body, cookie_only: true }),
++  });
++  const raw = await readJson(response);
++  await assertOk(response, raw);
++  const parsed = parseWithFallback<{ user: User } | null>(
++    raw,
++    CookieOnlyLoginResponseSchema,
++    null,
++    { endpoint: `POST ${path} (cookie_only)`, sensitive: true },
++  );
++  if (!parsed) throw new Error("Malformed cookie-only login response");
++  return parsed.user;
++}
++
++export function verifyAndroidEmailCode(
++  email: string,
++  code: string,
++): Promise<User> {
++  return cookieOnlyLogin("/auth/verify-code", { email, code });
++}
++
++export function loginAndroidWithGoogle(
++  code: string,
++  redirectUri: string,
++): Promise<User> {
++  return cookieOnlyLogin("/auth/google", {
++    code,
++    redirect_uri: redirectUri,
++  });
++}
++
++function readCookie(name: string): string | null {
++  const prefix = `${name}=`;
++  const match = document.cookie
++    .split(";")
++    .map((part) => part.trim())
++    .find((part) => part.startsWith(prefix));
++  return match ? match.slice(prefix.length) || null : null;
++}
++
++function readCsrfCookie(): string | null {
++  return readCookie("multica_csrf_session") ?? readCookie("multica_csrf");
++}
++
++export async function prepareAndroidHandoff(
++  request: AndroidLoginRequest,
++): Promise<string> {
++  const csrf = readCsrfCookie();
++  if (!csrf) throw new Error("Missing CSRF cookie");
++
++  const response = await fetch(apiUrl("/auth/android/prepare"), {
++    method: "POST",
++    credentials: "include",
++    headers: {
++      "Content-Type": "application/json",
++      "X-CSRF-Token": csrf,
++    },
++    body: JSON.stringify({
++      state: request.state,
++      code_challenge: request.codeChallenge,
++      app_id: ANDROID_APP_ID,
++    }),
++  });
++  const raw = await readJson(response);
++  await assertOk(response, raw);
++  const parsed = parseWithFallback<{ redirect_url: string } | null>(
++    raw,
++    androidPrepareResponseSchema(window.location.origin),
++    null,
++    { endpoint: "POST /auth/android/prepare", sensitive: true },
++  );
++  if (!parsed) throw new Error("Malformed Android handoff response");
++
++  const redirect = new URL(parsed.redirect_url);
++  if (redirect.searchParams.get("state") !== request.state) {
++    throw new Error("Android handoff state mismatch");
++  }
++  return parsed.redirect_url;
++}
++
++export function androidCallbackUrlFromSearchParams(
++  searchParams: SearchParamsReader,
++): string | null {
++  const keys = [...searchParams.keys()];
++  if (
++    searchParams.getAll("code").length !== 1 ||
++    searchParams.getAll("state").length !== 1 ||
++    !keys.every((key) => key === "code" || key === "state")
++  ) {
++    return null;
++  }
++
++  const parsed = AndroidCallbackQuerySchema.safeParse({
++    code: searchParams.get("code"),
++    state: searchParams.get("state"),
++  });
++  if (!parsed.success) return null;
++  const query = new URLSearchParams(parsed.data);
++  return `multica-android://auth/callback?${query}`;
++}
+diff --git a/apps/web/features/auth/android-handoff-card.tsx b/apps/web/features/auth/android-handoff-card.tsx
+new file mode 100644
+index 000000000..048f37f14
+--- /dev/null
++++ b/apps/web/features/auth/android-handoff-card.tsx
+@@ -0,0 +1,68 @@
++"use client";
++
++import {
++  Card,
++  CardContent,
++  CardDescription,
++  CardHeader,
++  CardTitle,
++} from "@multica/ui/components/ui/card";
++import { Button } from "@multica/ui/components/ui/button";
++import { Loader2 } from "@multica/ui/icons";
++import { useT } from "@multica/views/i18n";
++
++export function AndroidHandoffCard({
++  redirectUrl,
++  errorDescription,
++}: {
++  redirectUrl?: string | null;
++  errorDescription?: string | null;
++}) {
++  const { t } = useT("auth");
++
++  if (errorDescription) {
++    return (
++      <div className="flex min-h-screen items-center justify-center">
++        <Card className="w-full max-w-sm">
++          <CardHeader className="text-center">
++            <CardTitle className="text-display-sm">
++              {t(($) => $.web.callback.failed_title)}
++            </CardTitle>
++            <CardDescription>{errorDescription}</CardDescription>
++          </CardHeader>
++        </Card>
++      </div>
++    );
++  }
++
++  return (
++    <div className="flex min-h-screen items-center justify-center">
++      <Card className="w-full max-w-sm">
++        <CardHeader className="text-center">
++          <CardTitle className="text-display-sm">
++            {t(($) => $.web.android_handoff.opening_title)}
++          </CardTitle>
++          <CardDescription>
++            {redirectUrl
++              ? t(($) => $.web.android_handoff.opening_description)
++              : t(($) => $.web.android_handoff.preparing)}
++          </CardDescription>
++        </CardHeader>
++        <CardContent className="flex justify-center">
++          {redirectUrl ? (
++            <Button
++              variant="outline"
++              onClick={() => {
++                window.location.href = redirectUrl;
++              }}
++            >
++              {t(($) => $.web.android_handoff.open_button)}
++            </Button>
++          ) : (
++            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
++          )}
++        </CardContent>
++      </Card>
++    </div>
++  );
++}
+diff --git a/apps/web/next.config.test.ts b/apps/web/next.config.test.ts
+index 93d1683d5..1d615d013 100644
+--- a/apps/web/next.config.test.ts
++++ b/apps/web/next.config.test.ts
+@@ -9,6 +9,27 @@ vi.mock("fumadocs-mdx/next", () => ({
+ 
+ import nextConfig from "./next.config";
+ 
++describe("sensitive authentication response headers", () => {
++  it("prevents storage and referrer leakage on login and handoff routes", async () => {
++    const routes = (await nextConfig.headers?.()) ?? [];
++
++    for (const source of [
++      "/login",
++      "/auth/callback",
++      "/auth/android/:path*",
++    ]) {
++      const route = routes.find((candidate) => candidate.source === source);
++      expect(route).toBeDefined();
++      expect(route?.headers).toEqual(
++        expect.arrayContaining([
++          { key: "Cache-Control", value: "no-store" },
++          { key: "Referrer-Policy", value: "no-referrer" },
++        ]),
++      );
++    }
++  });
++});
++
+ describe("image optimization paths", () => {
+   it.each([
+     "/uploads/workspaces/workspace/attachment.png",
+diff --git a/apps/web/next.config.ts b/apps/web/next.config.ts
+index 3251f19ce..0360c7070 100644
+--- a/apps/web/next.config.ts
++++ b/apps/web/next.config.ts
+@@ -62,6 +62,17 @@ const nextConfig: NextConfig = {
+       { pathname: "/usecases/**", search: "" },
+     ],
+   },
++  async headers() {
++    const sensitiveAuthHeaders = [
++      { key: "Cache-Control", value: "no-store" },
++      { key: "Referrer-Policy", value: "no-referrer" },
++    ];
++    return [
++      { source: "/login", headers: sensitiveAuthHeaders },
++      { source: "/auth/callback", headers: sensitiveAuthHeaders },
++      { source: "/auth/android/:path*", headers: sensitiveAuthHeaders },
++    ];
++  },
+   async rewrites() {
+     return {
+       // Run before file-system routes so /docs isn't shadowed by the
+diff --git a/apps/web/proxy.test.ts b/apps/web/proxy.test.ts
+index e519dae5c..7c5fd683d 100644
+--- a/apps/web/proxy.test.ts
++++ b/apps/web/proxy.test.ts
+@@ -247,21 +247,41 @@ describe("proxy runtime upstream rewrites", () => {
+     }
+   });
+ 
+-  it("does not rewrite frontend auth callback pages", () => {
+-    const previous = process.env.REMOTE_API_URL;
+-    process.env.REMOTE_API_URL = "http://backend:8080";
+-    try {
+-      const res = proxy(makeRequest("/auth/callback"));
++  it.each(["/auth/callback", "/auth/android/callback"])(
++    "does not rewrite frontend auth callback page %s",
++    (path) => {
++      const previous = process.env.REMOTE_API_URL;
++      process.env.REMOTE_API_URL = "http://backend:8080";
++      try {
++        const res = proxy(makeRequest(path));
++
++        expect(res.status).toBe(200);
++        expect(res.headers.get("x-middleware-rewrite")).toBeNull();
++        expect(
++          res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
++        ).toBe("en");
++      } finally {
++        restoreEnv("REMOTE_API_URL", previous);
++      }
++    },
++  );
+ 
+-      expect(res.status).toBe(200);
+-      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+-      expect(
+-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+-      ).toBe("en");
+-    } finally {
+-      restoreEnv("REMOTE_API_URL", previous);
+-    }
+-  });
++  it.each(["/auth/android/prepare", "/auth/android/exchange"])(
++    "continues to rewrite Android API route %s",
++    (path) => {
++      const previous = process.env.REMOTE_API_URL;
++      process.env.REMOTE_API_URL = "http://backend:8080";
++      try {
++        const res = proxy(makeRequest(path));
++
++        expect(res.headers.get("x-middleware-rewrite")).toBe(
++          `http://backend:8080${path}`,
++        );
++      } finally {
++        restoreEnv("REMOTE_API_URL", previous);
++      }
++    },
++  );
+ });
+ 
+ describe("proxy root and locale handling", () => {
+@@ -352,6 +372,15 @@ describe("upload route bypasses the buffering proxy", () => {
+     (url) => expect(unstable_doesMiddlewareMatch({ config, url })).toBe(false),
+   );
+ 
++  it("keeps the Android asset links file out of Proxy matching", () => {
++    expect(
++      unstable_doesMiddlewareMatch({
++        config,
++        url: "/.well-known/assetlinks.json",
++      }),
++    ).toBe(false);
++  });
++
+   it.each(["/api", "/api/config", "/api/upload-file-extra", "/v1/issues", "/auth/token", "/docs/intro", "/login"])(
+     "keeps the existing proxy behavior for %s",
+     (url) => expect(unstable_doesMiddlewareMatch({ config, url })).toBe(true),
+diff --git a/deploy/helm/multica/templates/configmap.yaml b/deploy/helm/multica/templates/configmap.yaml
+index c623a02a0..7ac9006f5 100644
+--- a/deploy/helm/multica/templates/configmap.yaml
++++ b/deploy/helm/multica/templates/configmap.yaml
+@@ -14,6 +14,7 @@ data:
+   APP_ENV: {{ .Values.backend.config.appEnv | quote }}
+   MULTICA_APP_URL: {{ .Values.backend.config.appUrl | quote }}
+   FRONTEND_ORIGIN: {{ .Values.backend.config.frontendOrigin | quote }}
++  ANDROID_AUTH_USE_APP_LINKS: {{ .Values.backend.config.androidAuthUseAppLinks | default false | quote }}
+   CORS_ALLOWED_ORIGINS: {{ .Values.backend.config.corsAllowedOrigins | quote }}
+   COOKIE_DOMAIN: {{ .Values.backend.config.cookieDomain | quote }}
+   RESEND_FROM_EMAIL: {{ .Values.backend.config.resendFromEmail | quote }}
+diff --git a/deploy/helm/multica/templates/frontend.yaml b/deploy/helm/multica/templates/frontend.yaml
+index eb8d60692..7e8a32abd 100644
+--- a/deploy/helm/multica/templates/frontend.yaml
++++ b/deploy/helm/multica/templates/frontend.yaml
+@@ -50,6 +50,10 @@ spec:
+             - name: GOOGLE_ANALYTICS_ID
+               value: {{ .Values.frontend.config.googleAnalyticsId | quote }}
+             {{- end }}
++            {{- if .Values.frontend.config.androidReleaseCertSha256 }}
++            - name: ANDROID_RELEASE_CERT_SHA256
++              value: {{ .Values.frontend.config.androidReleaseCertSha256 | quote }}
++            {{- end }}
+           resources:
+             {{- toYaml .Values.frontend.resources | nindent 12 }}
+       {{- with .Values.frontend.affinity }}
+diff --git a/deploy/helm/multica/values.yaml b/deploy/helm/multica/values.yaml
+index a6b7fdcae..aa05e167e 100644
+--- a/deploy/helm/multica/values.yaml
++++ b/deploy/helm/multica/values.yaml
+@@ -144,6 +144,8 @@ backend:
+     appEnv: production
+     appUrl: http://multica.dev.lan
+     frontendOrigin: http://multica.dev.lan
++    # Enable HTTPS Android callbacks only after verifying domain association.
++    androidAuthUseAppLinks: false
+     corsAllowedOrigins: ""
+     cookieDomain: ""
+     resendFromEmail: noreply@multica.ai
+@@ -221,6 +223,8 @@ frontend:
+     publicWsUrl: ""
+     # Optional GA4 Measurement ID (G-XXXXXXXXXX). Empty keeps gtag.js off.
+     googleAnalyticsId: ""
++    # Public release certificate fingerprints for Android App Links, comma-separated.
++    androidReleaseCertSha256: ""
+   # Compatibility shim for legacy multica-web images built before runtime
+   # URL rewrites. New images do not need this unprefixed Service.
+   compatibility:
+diff --git a/docker-compose.selfhost.yml b/docker-compose.selfhost.yml
+index 9400dadab..b3e8507a5 100644
+--- a/docker-compose.selfhost.yml
++++ b/docker-compose.selfhost.yml
+@@ -80,6 +80,7 @@ services:
+       REALTIME_METRICS_TOKEN: ${REALTIME_METRICS_TOKEN:-}
+       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}
+       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
++      ANDROID_AUTH_USE_APP_LINKS: ${ANDROID_AUTH_USE_APP_LINKS:-false}
+       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+       RESEND_API_KEY: ${RESEND_API_KEY:-}
+       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@multica.ai}
+@@ -303,6 +304,7 @@ services:
+       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+       GOOGLE_ANALYTICS_ID: ${GOOGLE_ANALYTICS_ID:-}
++      ANDROID_RELEASE_CERT_SHA256: ${ANDROID_RELEASE_CERT_SHA256:-}
+     restart: unless-stopped
+ 
+ volumes:
+diff --git a/docs/android-auth-handoff.md b/docs/android-auth-handoff.md
+new file mode 100644
+index 000000000..75a7e722e
+--- /dev/null
++++ b/docs/android-auth-handoff.md
+@@ -0,0 +1,59 @@
++# Android browser sign-in handoff
++
++This implements the GANY-28 Web/API side of the GANY-26 Android 0.1.2 contract. Deployment and device acceptance are separate gates. Do not treat passing local tests as a production login or App Links verification.
++
++## Protocol
++
++1. The app keeps a cryptographically random state and PKCE verifier locally. Open `/login?platform=android&android_state=<base64url>&android_challenge=<base64url-SHA256(verifier)>` in the system browser. State is canonical unpadded base64url encoding of 16–96 bytes; the challenge encodes exactly 32 bytes. The verifier follows RFC 7636 (43–128 unreserved characters). The Android contract uses 32 random bytes for state and verifier.
++2. The web page preserves state and challenge during email and Google sign-in. In this flow, `/auth/verify-code` and `/auth/google` receive `cookie_only: true`; success returns `{ "user": ... }` and HttpOnly auth/readable CSRF cookies, with no `token` field. Installed Desktop/CLI clients retain their existing login responses.
++3. With a valid human browser JWT cookie containing a session ID, send `POST /auth/android/prepare`, JSON `{ "state": "...", "code_challenge": "...", "app_id": "ai.multica.android" }`, credentials included and `X-CSRF-Token` copied from the existing CSRF cookie. Authorization header credentials, PAT/task credentials placed in cookies, forged identity headers and missing CSRF are rejected.
++4. The preparation response is `{ "redirect_url": "multica-android://auth/callback?code=...&state=..." }`. Only a random 256-bit single-use code enters the redirect. Its SHA-256 hash, user ID, source session ID/expiration, state, challenge and fixed app identity are stored in PostgreSQL. Its lifetime is the earlier of five minutes and the source cookie's expiration. Expired rows are removed during preparation.
++5. Android must verify the callback scheme/host/path and exact pending state before using the code. Post `application/x-www-form-urlencoded` fields `code`, `state`, `code_verifier` using WebView `postUrl` to **the same origin** `/auth/android/exchange`. A previous WebView cookie is not required. Native `postUrl` requests with a missing Content-Type are parsed as URL-encoded forms; other media types are rejected. An optional `app_id` must be `ai.multica.android`; omission means this fixed app. Query-string credentials cannot supply or replace form fields.
++6. The API atomically deletes the matching, unexpired row with `DELETE ... RETURNING`. Wrong proof does not consume a valid code. Replay, wrong stored app binding, expired source session and disabled/deleted users cannot establish a session. Success issues a new ordinary web session, sets `multica_auth` (HttpOnly) and both existing readable CSRF cookies, adds CDN cookies when configured, and responds **303 Location: /**. It returns no bearer token or JSON credential. Subsequent cookie-authenticated API writes still require CSRF.
++
++Native `WebView.postUrl` may omit `Origin`. A supplied Origin must equal `FRONTEND_ORIGIN`; browser requests marked `Sec-Fetch-Site: cross-site` are rejected to prevent planting an attacker's session. Opaque `Origin: null` is rejected. Device QA must capture the actual native POST headers; if the Android implementation sends an opaque Origin, use a same-origin WebView context before posting.
++
++`app_id` identifies a public client; it is not Android package attestation. PKCE binds redemption to the initiating verifier. Existing sessions are signed, stateless JWTs: logging out clears cookies rather than revoking server-side sessions, so an already prepared code remains usable until its short expiration. No new bearer-token persistence is introduced by this flow.
++
++## Routing and headers
++
++The Next runtime proxy and development rewrites forward `/auth/android/prepare` and `/auth/android/exchange` to Go. `/auth/android/callback` remains a Next page, alongside the existing Google `/auth/callback`; it forwards a validated HTTPS callback code/state to the fixed custom scheme as a browser fallback. The direct custom-scheme return is the default. After independently verifying domain association, the deployment owner can set the **API** runtime variable `ANDROID_AUTH_USE_APP_LINKS=true` (Helm: `backend.config.androidAuthUseAppLinks`) to return `https://<FRONTEND_ORIGIN host>/auth/android/callback` instead. This mode rejects missing or non-HTTPS frontend origins with 503. The HTTPS route or switch alone is not evidence that Android App Links work.
++
++Login/callback pages and handoff API responses use `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. Sensitive client response-validation diagnostics redact payloads and custom error messages; Android callback logs omit raw error objects. The Go request logger records paths, not query strings or request bodies. Production ingress/CDN/APM owners must also disable body capture and query-string logging on auth/callback paths; never collect authorization codes, verifiers or auth cookies in evidence.
++
++## Deployment contract
++
++Apply migrations `723`–`725` before the API rollout. Both indexes use standalone concurrent-index migrations and register invalid-index cleanup hooks. Rebase and renumber against the latest main if these numbers have been taken before integration, regenerate with `make sqlc`, and run `go test ./cmd/migrate ./internal/migrations`.
++
++Configure the existing production `FRONTEND_ORIGIN=https://multica.ai` and appropriate `COOKIE_DOMAIN`; exchange must be accessed through `https://multica.ai/auth/android/exchange`, not the API origin. Ensure all Set-Cookie headers survive the proxy and auth POSTs are never cached. Retain the normal deployment's production JWT secret and Redis-backed auth rate limits.
++
++Set **the Next.js server runtime variable** `ANDROID_RELEASE_CERT_SHA256` to the public **release** signing certificate's SHA-256 fingerprint, formatted as 32 colon-separated hexadecimal bytes. Comma-separated fingerprints support certificate rotation. Docker self-host forwards this variable; Helm uses `frontend.config.androidReleaseCertSha256`. Never copy or request a private keystore. The release owner can export this public fingerprint from their signing system or public release certificate.
++
++`GET /.well-known/assetlinks.json` returns JSON with `delegate_permission/common.handle_all_urls`, namespace `android_app`, package `ai.multica.android` and the configured public fingerprints. It returns 503/no-store when fingerprints are absent or malformed; there is no fabricated production association or debug certificate default. A valid document is public and cached for five minutes. Serve it directly over HTTPS without redirects or authentication.
++
++Google's authorized redirect URI remains **https://multica.ai/auth/callback**, not the Android callback or exchange route. Official maintainers must confirm the existing deployed OAuth configuration supports that browser redirect; this flow does not require sharing a client secret or creating a separate Android OAuth client. Tests use a simulated provider and do not prove production Google configuration.
++
++## Acceptance handoff to GANY-26
++
++Required owner-provided inputs:
++
++- Public release certificate SHA-256 fingerprint for `ai.multica.android`; private signing material stays with its owner.
++- Official maintainers to deploy the Web/API changes, migrations, runtime fingerprint setting and domain association, and to verify ingress logging configuration.
++- Official maintainer confirmation that the existing Google OAuth configuration supports the exact browser redirect URI. Any configuration change can be made by its owner; no secret handoff is needed.
++- Authorized ADB device or working emulator with the intended signed APK.
++
++After authorized deployment, record the deployed revision, assetlinks status/content/fingerprint match, exchange status and cookie attributes without credential values, and browser-to-app-to-WebView behavior for email and Google. Verify deep-link state mismatch, replay, cold-start callback, cookie persistence after restart, authenticated CSRF writes and App Links association (`adb shell pm verify-app-links --re-verify ai.multica.android` and `adb shell pm get-app-links ai.multica.android`). Do not mark full Android login accepted until these device checks pass.
++
++Local verification entry points:
++
++```sh
++make sqlc
++go test ./internal/auth ./cmd/migrate ./internal/migrations
++# With the checkout's migrated, isolated DATABASE_URL:
++go test ./internal/handler -run 'TestAndroid|TestVerifyCode|TestGoogleLogin|TestGetMe' -count=1 -v
++go test ./cmd/server -run 'TestAndroidAuthRoutes' -count=1 -v
++pnpm --filter @multica/web test
++pnpm --filter @multica/views test -- auth/login-page.test.tsx
++```
++
++The independent test suite checks cookie-only email/Google login, cookie-backed exchange, anonymous/no-CSRF failures, state/verifier/app mismatch, source/code expiration, disabled users, replay and concurrent atomic consumption. Web tests own parameter propagation, redirect validation and proxy routing. Real Google and Android device behavior remain deployment acceptance checks.
+diff --git a/packages/core/api/schema.test.ts b/packages/core/api/schema.test.ts
+index b6942ed10..c0460c088 100644
+--- a/packages/core/api/schema.test.ts
++++ b/packages/core/api/schema.test.ts
+@@ -2,7 +2,8 @@
+ import { afterEach, describe, expect, it, vi } from "vitest";
+ import { z } from "zod";
+ import { ApiClient, ApiError } from "./client";
+-import { parseWithFallback } from "./schema";
++import { parseWithFallback, setSchemaLogger } from "./schema";
++import { noopLogger } from "../logger";
+ import { CreateIssueResponseSchema } from "./schemas";
+ 
+ // Helper: stub fetch with a single JSON response. Status defaults to 200.
+@@ -20,6 +21,28 @@ function stubFetchJson(body: unknown, status = 200) {
+ 
+ afterEach(() => {
+   vi.unstubAllGlobals();
++  setSchemaLogger(noopLogger);
++});
++
++it("redacts credential-bearing payloads and custom validation messages from schema telemetry", () => {
++  const warn = vi.fn();
++  setSchemaLogger({ ...noopLogger, warn });
++  const secret = "one-use-auth-code";
++  const schema = z.object({
++    redirect_url: z.string().refine(() => false, { message: secret }),
++  });
++  const raw = { redirect_url: `multica-android://auth/callback?code=${secret}` };
++  expect(parseWithFallback(raw, schema, null, {
++    endpoint: "POST /auth/android/prepare",
++    sensitive: true,
++  })).toBeNull();
++  expect(warn).toHaveBeenCalledOnce();
++  expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
++  expect(warn.mock.calls[0]?.[1]).toMatchObject({
++    endpoint: "POST /auth/android/prepare",
++    received: "[redacted]",
++    issues: [{ code: "custom" }],
++  });
+ });
+ 
+ // These tests cover the five failure modes that white-screened the desktop
+diff --git a/packages/core/api/schema.ts b/packages/core/api/schema.ts
+index 37047f5b4..e87102e3c 100644
+--- a/packages/core/api/schema.ts
++++ b/packages/core/api/schema.ts
+@@ -14,14 +14,16 @@ export interface ParseOptions {
+   /** Endpoint identifier used in the warning log so we can grep for which
+    *  contract drifted in production telemetry. */
+   endpoint: string;
++  sensitive?: boolean;
+ }
+ 
+ /**
+  * Validate a JSON value parsed from an API response against a zod schema,
+  * returning the parsed value on success or `fallback` on failure.
+  *
+- * On failure we log a warning with the endpoint and zod's structured error,
+- * but never throw — the UI layer must keep rendering. This is the boundary
++ * On failure we log a warning with the endpoint and zod's structured error.
++ * Sensitive responses log only error codes, without payloads or messages.
++ * We never throw — the UI layer must keep rendering. This is the boundary
+  * defense that turns "API contract drifted" from a white-screen incident
+  * into a degraded-but-rendering page.
+  *
+@@ -47,8 +49,10 @@ export function parseWithFallback<T>(
+     `API response failed schema validation: ${opts.endpoint}`,
+     {
+       endpoint: opts.endpoint,
+-      issues: result.error.issues,
+-      received: data,
++      issues: opts.sensitive
++        ? result.error.issues.map(({ code }) => ({ code }))
++        : result.error.issues,
++      received: opts.sensitive ? "[redacted]" : data,
+     },
+   );
+   return fallback;
+diff --git a/packages/views/auth/login-page.test.tsx b/packages/views/auth/login-page.test.tsx
+index 679e9c202..d05ae2040 100644
+--- a/packages/views/auth/login-page.test.tsx
++++ b/packages/views/auth/login-page.test.tsx
+@@ -305,6 +305,37 @@ describe("LoginPage", () => {
+     });
+   });
+ 
++  it("uses an injected verifier without the auth store, token API, or storage", async () => {
++    mockSendCode.mockResolvedValueOnce(undefined);
++    const onVerifyCode = vi.fn().mockResolvedValue(undefined);
++
++    renderWithI18n(
++      <LoginPage onSuccess={onSuccess} onVerifyCode={onVerifyCode} />,
++    );
++
++    const user = userEvent.setup();
++    await user.type(screen.getByLabelText(/email/i), "android@example.com");
++    await user.click(screen.getByRole("button", { name: /continue/i }));
++    await waitFor(() => {
++      expect(screen.getByText(/check your email/i)).toBeInTheDocument();
++    });
++    await user.type(getOTPInput(), "123456");
++
++    await waitFor(() => {
++      expect(onVerifyCode).toHaveBeenCalledWith(
++        "android@example.com",
++        "123456",
++      );
++    });
++    expect(mockVerifyCode).not.toHaveBeenCalled();
++    expect(mockApiVerifyCode).not.toHaveBeenCalled();
++    expect(mockApiListWorkspaces).not.toHaveBeenCalled();
++    expect(mockApiSetToken).not.toHaveBeenCalled();
++    expect(mockApiIssueCliToken).not.toHaveBeenCalled();
++    expect(localStorage.length).toBe(0);
++    expect(onSuccess).not.toHaveBeenCalled();
++  });
++
+   it("shows error on invalid code", async () => {
+     mockSendCode.mockResolvedValueOnce(undefined);
+     mockVerifyCode.mockRejectedValueOnce(new Error("Invalid code"));
+diff --git a/packages/views/auth/login-page.tsx b/packages/views/auth/login-page.tsx
+index f6d2b18a6..4b793f8fc 100644
+--- a/packages/views/auth/login-page.tsx
++++ b/packages/views/auth/login-page.tsx
+@@ -53,6 +53,9 @@ interface LoginPageProps {
+   cliCallback?: CliCallbackConfig;
+   /** Called after a token is obtained (e.g. to set cookies). */
+   onTokenObtained?: () => void;
++  /** Override code verification for a platform handoff that must not mint or
++   *  persist a bearer token. The callback owns the post-verification flow. */
++  onVerifyCode?: (email: string, code: string) => Promise<void>;
+   /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
+   onGoogleLogin?: () => void;
+   /** Slot rendered at the bottom of the sign-in card, below the
+@@ -99,6 +102,7 @@ export function LoginPage({
+   google,
+   cliCallback,
+   onTokenObtained,
++  onVerifyCode,
+   onGoogleLogin,
+   extra,
+ }: LoginPageProps) {
+@@ -211,6 +215,11 @@ export function LoginPage({
+           return;
+         }
+ 
++        if (onVerifyCode) {
++          await onVerifyCode(email, value);
++          return;
++        }
++
+         // Normal path: seed the workspace list into the Query cache so the
+         // caller's onSuccess can read it synchronously to compute a destination
+         // URL (first workspace's slug, or /workspaces/new for zero-workspace
+@@ -230,7 +239,7 @@ export function LoginPage({
+         setLoading(false);
+       }
+     },
+-    [email, onSuccess, cliCallback, onTokenObtained, qc, t],
++    [email, onSuccess, cliCallback, onTokenObtained, onVerifyCode, qc, t],
+   );
+ 
+   const handleResend = async () => {
+diff --git a/packages/views/locales/en/auth.json b/packages/views/locales/en/auth.json
+index 342a9b48c..4e245c34c 100644
+--- a/packages/views/locales/en/auth.json
++++ b/packages/views/locales/en/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "Sign-in failed",
+       "prepare_failed": "Failed to prepare Desktop sign-in"
+     },
++    "android_handoff": {
++      "preparing": "Preparing Android sign-in...",
++      "opening_title": "Opening Multica",
++      "opening_description": "Didn't open automatically? Tap Open Multica.",
++      "open_button": "Open Multica",
++      "prepare_failed": "Failed to prepare Android sign-in",
++      "invalid_request": "The Android sign-in request is invalid. Return to the app and try again."
++    },
+     "callback": {
+       "failed_title": "Sign-in failed",
+       "missing_code": "Missing authorization code",
+diff --git a/packages/views/locales/es/auth.json b/packages/views/locales/es/auth.json
+index c2ee08dc9..af4bef721 100644
+--- a/packages/views/locales/es/auth.json
++++ b/packages/views/locales/es/auth.json
+@@ -44,6 +44,14 @@
+       "failed_title": "Error de inicio de sesión",
+       "prepare_failed": "No se ha podido preparar el inicio de sesión en Multica Desktop"
+     },
++    "android_handoff": {
++      "preparing": "Preparando el inicio de sesión en Android...",
++      "opening_title": "Abriendo Multica",
++      "opening_description": "¿No se ha abierto automáticamente? Pulsa Abrir Multica.",
++      "open_button": "Abrir Multica",
++      "prepare_failed": "No se ha podido preparar el inicio de sesión en Android",
++      "invalid_request": "La solicitud de inicio de sesión de Android no es válida. Vuelve a la aplicación e inténtalo de nuevo."
++    },
+     "callback": {
+       "failed_title": "Error al iniciar sesión",
+       "missing_code": "Falta el código de autorización",
+diff --git a/packages/views/locales/fr/auth.json b/packages/views/locales/fr/auth.json
+index e7dbad1ce..3d436f30d 100644
+--- a/packages/views/locales/fr/auth.json
++++ b/packages/views/locales/fr/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "Échec de la connexion",
+       "prepare_failed": "Échec de la préparation de la connexion à l'application de bureau"
+     },
++    "android_handoff": {
++      "preparing": "Préparation de la connexion Android...",
++      "opening_title": "Ouverture de Multica",
++      "opening_description": "L’ouverture automatique a échoué ? Appuyez sur Ouvrir Multica.",
++      "open_button": "Ouvrir Multica",
++      "prepare_failed": "Échec de la préparation de la connexion Android",
++      "invalid_request": "La demande de connexion Android est invalide. Revenez dans l’application et réessayez."
++    },
+     "callback": {
+       "failed_title": "Échec de la connexion",
+       "missing_code": "Code d'autorisation manquant",
+diff --git a/packages/views/locales/ja/auth.json b/packages/views/locales/ja/auth.json
+index 380e7a6c8..ab2d96141 100644
+--- a/packages/views/locales/ja/auth.json
++++ b/packages/views/locales/ja/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "ログインに失敗しました",
+       "prepare_failed": "デスクトップのログインを準備できませんでした"
+     },
++    "android_handoff": {
++      "preparing": "Android のログインを準備中...",
++      "opening_title": "Multicaを開いています",
++      "opening_description": "自動で開かない場合は「Multicaを開く」をタップしてください。",
++      "open_button": "Multicaを開く",
++      "prepare_failed": "Android のログインを準備できませんでした",
++      "invalid_request": "Android のログインリクエストが無効です。アプリに戻ってもう一度お試しください。"
++    },
+     "callback": {
+       "failed_title": "サインインに失敗しました",
+       "missing_code": "認証コードがありません",
+diff --git a/packages/views/locales/ko/auth.json b/packages/views/locales/ko/auth.json
+index 180d11163..952028129 100644
+--- a/packages/views/locales/ko/auth.json
++++ b/packages/views/locales/ko/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "로그인 실패",
+       "prepare_failed": "데스크톱 로그인을 준비하지 못했습니다"
+     },
++    "android_handoff": {
++      "preparing": "Android 로그인 준비 중...",
++      "opening_title": "Multica 여는 중",
++      "opening_description": "자동으로 열리지 않으면 Multica 열기를 탭하세요.",
++      "open_button": "Multica 열기",
++      "prepare_failed": "Android 로그인을 준비하지 못했습니다",
++      "invalid_request": "Android 로그인 요청이 올바르지 않습니다. 앱으로 돌아가 다시 시도하세요."
++    },
+     "callback": {
+       "failed_title": "로그인 실패",
+       "missing_code": "인증 코드가 없습니다",
+diff --git a/packages/views/locales/ru/auth.json b/packages/views/locales/ru/auth.json
+index e1467151b..132bbbdb0 100644
+--- a/packages/views/locales/ru/auth.json
++++ b/packages/views/locales/ru/auth.json
+@@ -44,6 +44,14 @@
+       "failed_title": "Не удалось войти",
+       "prepare_failed": "Не удалось подготовить вход в Desktop"
+     },
++    "android_handoff": {
++      "preparing": "Подготовка входа в Android...",
++      "opening_title": "Открывается Multica",
++      "opening_description": "Не открылось автоматически? Нажмите «Открыть Multica».",
++      "open_button": "Открыть Multica",
++      "prepare_failed": "Не удалось подготовить вход в Android",
++      "invalid_request": "Некорректный запрос на вход в Android. Вернитесь в приложение и повторите попытку."
++    },
+     "callback": {
+       "failed_title": "Не удалось войти",
+       "missing_code": "Отсутствует код авторизации",
+diff --git a/packages/views/locales/zh-Hans/auth.json b/packages/views/locales/zh-Hans/auth.json
+index 9ebd1a9a8..b572b2142 100644
+--- a/packages/views/locales/zh-Hans/auth.json
++++ b/packages/views/locales/zh-Hans/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "登录失败",
+       "prepare_failed": "桌面登录准备失败"
+     },
++    "android_handoff": {
++      "preparing": "正在准备 Android 登录...",
++      "opening_title": "正在打开 Multica",
++      "opening_description": "没有自动打开？点击\"打开 Multica\"。",
++      "open_button": "打开 Multica",
++      "prepare_failed": "Android 登录准备失败",
++      "invalid_request": "Android 登录请求无效，请返回应用重试。"
++    },
+     "callback": {
+       "failed_title": "登录失败",
+       "missing_code": "缺少授权码",
+diff --git a/packages/views/locales/zh-Hant/auth.json b/packages/views/locales/zh-Hant/auth.json
+index fcce5fe0c..831950802 100644
+--- a/packages/views/locales/zh-Hant/auth.json
++++ b/packages/views/locales/zh-Hant/auth.json
+@@ -48,6 +48,14 @@
+       "failed_title": "登入失敗",
+       "prepare_failed": "桌面登入準備失敗"
+     },
++    "android_handoff": {
++      "preparing": "正在準備 Android 登入...",
++      "opening_title": "正在開啟 Multica",
++      "opening_description": "沒有自動開啟？點選\"開啟 Multica\"。",
++      "open_button": "開啟 Multica",
++      "prepare_failed": "Android 登入準備失敗",
++      "invalid_request": "Android 登入請求無效，請返回應用程式重試。"
++    },
+     "callback": {
+       "failed_title": "登入失敗",
+       "missing_code": "缺少授權碼",
+diff --git a/server/cmd/migrate/main.go b/server/cmd/migrate/main.go
+index 043d41b4b..1c834c14f 100644
+--- a/server/cmd/migrate/main.go
++++ b/server/cmd/migrate/main.go
+@@ -140,6 +140,8 @@ var pgBigmOperatorClass = extensionOperatorClass{
+ // they are still pending: a fresh self-hosted install, which is exactly where an
+ // interrupted build would otherwise leave a permanently unusable index.
+ var concurrentIndexCleanups = map[string]string{
++	"724_android_auth_code_hash_idx":                            "android_auth_code_hash_idx",
++	"725_android_auth_code_expiry_idx":                          "android_auth_code_expiry_idx",
+ 	"720_remote_app_oauth_client_idx":                           "uq_remote_app_oauth_client_app_redirect",
+ 	"721_remote_app_connection_owner_idx":                       "uq_remote_app_connection_owner",
+ 	"676_chat_wakeup_due_idx":                                   "idx_chat_wakeup_due",
+diff --git a/server/cmd/server/android_auth_test.go b/server/cmd/server/android_auth_test.go
+new file mode 100644
+index 000000000..143eb4e8f
+--- /dev/null
++++ b/server/cmd/server/android_auth_test.go
+@@ -0,0 +1,33 @@
++package main
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++func TestAndroidAuthRoutes(t *testing.T) {
++	for _, tc := range []struct {
++		path, contentType string
++		status            int
++	}{
++		{"/auth/android/prepare", "application/json", http.StatusUnauthorized},
++		{"/auth/android/exchange", "application/json", http.StatusUnsupportedMediaType},
++		{"/auth/android/exchange", "application/x-www-form-urlencoded", http.StatusBadRequest},
++		{"/auth/android/exchange", "", http.StatusBadRequest},
++	} {
++		t.Run(tc.path+tc.contentType, func(t *testing.T) {
++			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(""))
++			req.Header.Set("Content-Type", tc.contentType)
++			rec := httptest.NewRecorder()
++			testServer.Config.Handler.ServeHTTP(rec, req)
++			if rec.Code != tc.status {
++				t.Fatalf("status=%d, want=%d: %s", rec.Code, tc.status, rec.Body.String())
++			}
++			if rec.Header().Get("Cache-Control") != "no-store" || rec.Header().Get("Referrer-Policy") != "no-referrer" {
++				t.Fatal("Android routes must retain credential-protection headers on failures")
++			}
++		})
++	}
++}
+diff --git a/server/cmd/server/router.go b/server/cmd/server/router.go
+index db4d80af3..508861d1f 100644
+--- a/server/cmd/server/router.go
++++ b/server/cmd/server/router.go
+@@ -1670,6 +1670,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
+ 	r.With(authRL).Post("/auth/send-code", h.SendCode)
+ 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
+ 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
++	r.With(authVerifyRL).Post("/auth/android/prepare", h.PrepareAndroidAuth)
++	r.With(authVerifyRL).Post("/auth/android/exchange", h.ExchangeAndroidAuth)
+ 	r.Post("/auth/logout", h.Logout)
+ 
+ 	// Public API
+diff --git a/server/internal/handler/android_auth.go b/server/internal/handler/android_auth.go
+new file mode 100644
+index 000000000..281ebd085
+--- /dev/null
++++ b/server/internal/handler/android_auth.go
+@@ -0,0 +1,217 @@
++package handler
++
++import (
++	"crypto/rand"
++	"crypto/sha256"
++	"encoding/base64"
++	"encoding/json"
++	"errors"
++	"mime"
++	"net/http"
++	"net/url"
++	"os"
++	"strings"
++	"time"
++
++	"github.com/golang-jwt/jwt/v5"
++	"github.com/jackc/pgx/v5"
++	"github.com/jackc/pgx/v5/pgtype"
++	"github.com/multica-ai/multica/server/internal/auth"
++	db "github.com/multica-ai/multica/server/pkg/db/generated"
++)
++
++const androidAppID = "ai.multica.android"
++
++func androidAuthHeaders(w http.ResponseWriter) {
++	w.Header().Set("Cache-Control", "no-store")
++	w.Header().Set("Referrer-Policy", "no-referrer")
++	w.Header().Set("Pragma", "no-cache")
++}
++
++func validAndroidBase64URL(value string, minBytes, maxBytes int) bool {
++	decoded, err := base64.RawURLEncoding.Strict().DecodeString(value)
++	return err == nil && len(decoded) >= minBytes && len(decoded) <= maxBytes &&
++		base64.RawURLEncoding.EncodeToString(decoded) == value
++}
++
++func validAndroidVerifier(value string) bool {
++	if len(value) < 43 || len(value) > 128 {
++		return false
++	}
++	for _, c := range value {
++		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-._~", c)) {
++			return false
++		}
++	}
++	return true
++}
++
++// PrepareAndroidAuth accepts only a signed human browser cookie and its CSRF
++// proof. Header credentials must never become an app login authorization.
++func (h *Handler) PrepareAndroidAuth(w http.ResponseWriter, r *http.Request) {
++	androidAuthHeaders(w)
++	cookie, err := r.Cookie(auth.AuthCookieName)
++	if err != nil || cookie.Value == "" || r.Header.Get("Authorization") != "" {
++		writeError(w, http.StatusUnauthorized, "browser cookie session required")
++		return
++	}
++	claims := jwt.MapClaims{}
++	token, err := jwt.ParseWithClaims(cookie.Value, claims, func(token *jwt.Token) (any, error) {
++		return auth.JWTSecret(), nil
++	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
++	if err != nil || !token.Valid {
++		writeError(w, http.StatusUnauthorized, "invalid browser session")
++		return
++	}
++	userID, _ := claims.GetSubject()
++	var id pgtype.UUID
++	if err := id.Scan(userID); err != nil || !id.Valid {
++		writeError(w, http.StatusUnauthorized, "invalid browser session")
++		return
++	}
++	sid, _ := claims["sid"].(string)
++	exp, err := claims.GetExpirationTime()
++	if err != nil || exp == nil || sid == "" {
++		writeError(w, http.StatusUnauthorized, "sign in again before opening Android")
++		return
++	}
++	if !auth.ValidateCSRF(r) {
++		writeError(w, http.StatusForbidden, "CSRF validation failed")
++		return
++	}
++	user, err := h.Queries.GetUser(r.Context(), id)
++	if errors.Is(err, pgx.ErrNoRows) {
++		writeError(w, http.StatusUnauthorized, "browser user not found")
++		return
++	}
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to load browser user")
++		return
++	}
++	if auth.IsTemporarilyDisabledUser(userID, user.Email) {
++		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
++		return
++	}
++
++	var req struct {
++		State         string `json:"state"`
++		CodeChallenge string `json:"code_challenge"`
++		AppID         string `json:"app_id"`
++	}
++	r.Body = http.MaxBytesReader(w, r.Body, 4096)
++	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
++		!validAndroidBase64URL(req.State, 16, 96) || !validAndroidBase64URL(req.CodeChallenge, 32, 32) || req.AppID != androidAppID {
++		writeError(w, http.StatusBadRequest, "invalid Android handoff")
++		return
++	}
++
++	callbackBase := "multica-android://auth/callback"
++	if strings.EqualFold(os.Getenv("ANDROID_AUTH_USE_APP_LINKS"), "true") {
++		origin, err := url.Parse(strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/"))
++		if err != nil || origin.Scheme != "https" || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.ForceQuery || origin.Fragment != "" {
++			writeError(w, http.StatusServiceUnavailable, "verified HTTPS Android callback is not configured")
++			return
++		}
++		callbackBase = origin.String() + "/auth/android/callback"
++	}
++	codeBytes := make([]byte, 32)
++	if _, err := rand.Read(codeBytes); err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to prepare Android handoff")
++		return
++	}
++	code := base64.RawURLEncoding.EncodeToString(codeBytes)
++	if err := h.Queries.DeleteExpiredAndroidAuthCodes(r.Context()); err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to prepare Android handoff")
++		return
++	}
++	if err := h.Queries.CreateAndroidAuthCode(r.Context(), db.CreateAndroidAuthCodeParams{
++		CodeHash: auth.HashToken(code), UserID: id, SessionID: sid,
++		SessionExpiresAt: pgtype.Timestamptz{Time: exp.Time, Valid: true},
++		State:            req.State, CodeChallenge: req.CodeChallenge, AppID: androidAppID,
++	}); err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to prepare Android handoff")
++		return
++	}
++	callback := callbackBase + "?" + url.Values{"code": {code}, "state": {req.State}}.Encode()
++	writeJSON(w, http.StatusOK, map[string]string{"redirect_url": callback})
++}
++
++// ExchangeAndroidAuth is intentionally outside browser authentication: Android
++// posts the proof into a WebView that has no cookies yet.
++func (h *Handler) ExchangeAndroidAuth(w http.ResponseWriter, r *http.Request) {
++	androidAuthHeaders(w)
++	// Native WebView.postUrl can omit Origin. Browser form submissions must
++	// come from our origin so an attacker cannot plant their session in a browser.
++	origin := r.Header.Get("Origin")
++	if r.Header.Get("Sec-Fetch-Site") == "cross-site" || (origin != "" && origin != strings.TrimRight(os.Getenv("FRONTEND_ORIGIN"), "/")) {
++		writeError(w, http.StatusForbidden, "same-origin Android exchange required")
++		return
++	}
++	// Native postUrl requests can omit Content-Type; the exchange body is a form.
++	if r.Header.Get("Content-Type") == "" {
++		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++	}
++	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
++	if err != nil || mediaType != "application/x-www-form-urlencoded" {
++		writeError(w, http.StatusUnsupportedMediaType, "form body required")
++		return
++	}
++	r.Body = http.MaxBytesReader(w, r.Body, 4096)
++	if err := r.ParseForm(); err != nil {
++		writeError(w, http.StatusBadRequest, "invalid Android exchange")
++		return
++	}
++	// URL query parameters must not supply credentials or override the POST body.
++	code, state, verifier := r.PostForm.Get("code"), r.PostForm.Get("state"), r.PostForm.Get("code_verifier")
++	appID := r.PostForm.Get("app_id")
++	if appID == "" {
++		appID = androidAppID
++	}
++	if len(r.PostForm["code"]) != 1 || len(r.PostForm["state"]) != 1 || len(r.PostForm["code_verifier"]) != 1 ||
++		!validAndroidBase64URL(code, 32, 32) || !validAndroidBase64URL(state, 16, 96) || !validAndroidVerifier(verifier) || appID != androidAppID {
++		writeError(w, http.StatusBadRequest, "invalid Android exchange")
++		return
++	}
++	challenge := sha256.Sum256([]byte(verifier))
++	id, err := h.Queries.ConsumeAndroidAuthCode(r.Context(), db.ConsumeAndroidAuthCodeParams{
++		CodeHash: auth.HashToken(code), State: state,
++		CodeChallenge: base64.RawURLEncoding.EncodeToString(challenge[:]), AppID: androidAppID,
++	})
++	if errors.Is(err, pgx.ErrNoRows) {
++		writeError(w, http.StatusBadRequest, "invalid or expired Android code")
++		return
++	}
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to exchange Android code")
++		return
++	}
++	user, err := h.Queries.GetUser(r.Context(), id)
++	if errors.Is(err, pgx.ErrNoRows) {
++		writeError(w, http.StatusUnauthorized, "Android user not found")
++		return
++	}
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to load Android user")
++		return
++	}
++	token, err := h.issueJWT(user)
++	if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
++		writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
++		return
++	}
++	if err != nil {
++		writeError(w, http.StatusInternalServerError, "failed to create Android session")
++		return
++	}
++	if err := auth.SetAuthCookies(w, token); err != nil {
++		w.Header().Del("Set-Cookie")
++		writeError(w, http.StatusInternalServerError, "failed to create Android session")
++		return
++	}
++	if h.CFSigner != nil {
++		for _, cookie := range h.CFSigner.SignedCookies(time.Now().Add(auth.AuthTokenTTL())) {
++			http.SetCookie(w, cookie)
++		}
++	}
++	http.Redirect(w, r, "/", http.StatusSeeOther)
++}
+diff --git a/server/internal/handler/android_auth_test.go b/server/internal/handler/android_auth_test.go
+new file mode 100644
+index 000000000..8e0cdf378
+--- /dev/null
++++ b/server/internal/handler/android_auth_test.go
+@@ -0,0 +1,337 @@
++package handler
++
++import (
++	"crypto/sha256"
++	"encoding/base64"
++	"fmt"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/golang-jwt/jwt/v5"
++	"github.com/multica-ai/multica/server/internal/auth"
++	"github.com/multica-ai/multica/server/internal/middleware"
++	"github.com/multica-ai/multica/server/internal/testutil"
++)
++
++var androidTestState = base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("s", 32)))
++var androidTestVerifier = strings.Repeat("v", 43)
++
++func androidTestChallenge(verifier string) string {
++	hash := sha256.Sum256([]byte(verifier))
++	return base64.RawURLEncoding.EncodeToString(hash[:])
++}
++
++func androidBrowserCookies(t *testing.T, userID string) []*http.Cookie {
++	t.Helper()
++	user, err := testHandler.Queries.GetUser(t.Context(), parseUUID(userID))
++	if err != nil {
++		t.Fatal(err)
++	}
++	token, err := testHandler.issueJWT(user)
++	if err != nil {
++		t.Fatal(err)
++	}
++	rr := httptest.NewRecorder()
++	if err := auth.SetAuthCookies(rr, token); err != nil {
++		t.Fatal(err)
++	}
++	return rr.Result().Cookies()
++}
++
++func androidPrepareRequest(cookies []*http.Cookie) *http.Request {
++	req := testutil.JSONRequest(http.MethodPost, "/auth/android/prepare", map[string]string{
++		"state": androidTestState, "code_challenge": androidTestChallenge(androidTestVerifier), "app_id": androidAppID,
++	})
++	for _, cookie := range cookies {
++		req.AddCookie(cookie)
++		if cookie.Name == auth.CSRFCookieName {
++			req.Header.Set(auth.CSRFHeaderName, cookie.Value)
++		}
++	}
++	return req
++}
++
++func androidPrepareCode(t *testing.T, h *Handler, cookies []*http.Cookie) string {
++	t.Helper()
++	var out struct {
++		RedirectURL string `json:"redirect_url"`
++	}
++	resp := testutil.Call(t, h.PrepareAndroidAuth, androidPrepareRequest(cookies)).Want(http.StatusOK).JSON(&out)
++	if resp.Header().Get("Cache-Control") != "no-store" || resp.Header().Get("Referrer-Policy") != "no-referrer" {
++		t.Fatal("handoff must not be cached or leak referrers")
++	}
++	u, err := url.Parse(out.RedirectURL)
++	if err != nil || u.Scheme != "multica-android" || u.Host != "auth" || u.Path != "/callback" || u.Query().Get("state") != androidTestState || u.Query().Has("token") {
++		t.Fatalf("unsafe Android callback: %s", out.RedirectURL)
++	}
++	code := u.Query().Get("code")
++	if !validAndroidBase64URL(code, 32, 32) {
++		t.Fatal("expected a random 256-bit code")
++	}
++	t.Cleanup(func() {
++		dbfx.Exec(t, "DELETE FROM android_auth_code WHERE code_hash = $1", auth.HashToken(code))
++	})
++	return code
++}
++
++func androidExchangeRequest(code string) *http.Request {
++	form := url.Values{"code": {code}, "state": {androidTestState}, "code_verifier": {androidTestVerifier}}
++	req := httptest.NewRequest(http.MethodPost, "/auth/android/exchange", strings.NewReader(form.Encode()))
++	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
++	return req
++}
++
++func TestAndroidAuthExchangeCookieSession(t *testing.T) {
++	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
++	userID := dbfx.User(t, "Android Browser", "android-browser@example.com")
++	browserCookies := androidBrowserCookies(t, userID)
++	code := androidPrepareCode(t, testHandler, browserCookies)
++	var storedHash, storedUser, storedSession string
++	var expires, sessionExpires time.Time
++	dbfx.QueryRow(t, `SELECT code_hash, user_id, session_id, expires_at, session_expires_at FROM android_auth_code WHERE code_hash = $1`, auth.HashToken(code)).Scan(&storedHash, &storedUser, &storedSession, &expires, &sessionExpires)
++	if storedHash == code || storedUser != userID || storedSession == "" || expires.After(time.Now().Add(5*time.Minute)) || expires.After(sessionExpires) {
++		t.Fatal("code must be hashed and bound to the source session for at most five minutes")
++	}
++
++	resp := testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusSeeOther)
++	if resp.Header().Get("Location") != "/" || resp.Header().Get("Cache-Control") != "no-store" || resp.Header().Get("Referrer-Policy") != "no-referrer" {
++		t.Fatal("exchange must redirect only to the same-origin home without caching")
++	}
++	if strings.Contains(resp.Body.String(), "token") || strings.Contains(resp.Body.String(), code) {
++		t.Fatal("exchange response must not expose credentials")
++	}
++	var authCookie, csrfCookie *http.Cookie
++	for _, cookie := range resp.Result().Cookies() {
++		switch cookie.Name {
++		case auth.AuthCookieName:
++			authCookie = cookie
++		case auth.CSRFCookieName:
++			csrfCookie = cookie
++		}
++	}
++	if authCookie == nil || !authCookie.HttpOnly || !authCookie.Secure || csrfCookie == nil || csrfCookie.HttpOnly || !csrfCookie.Secure {
++		t.Fatal("exchange must issue the ordinary HttpOnly auth and readable CSRF cookies")
++	}
++	if auth.SessionIDFromToken(authCookie.Value) == storedSession {
++		t.Fatal("WebView must receive a new session rather than the browser session token")
++	}
++	meReq := httptest.NewRequest(http.MethodGet, "/api/me", nil)
++	meReq.AddCookie(authCookie)
++	protected := middleware.Auth(testHandler.Queries, nil, nil, nil)(http.HandlerFunc(testHandler.GetMe))
++	var me UserResponse
++	testutil.Call(t, protected.ServeHTTP, meReq).Want(http.StatusOK).JSON(&me)
++	if me.ID != userID {
++		t.Fatal("exchanged cookie authenticated as the wrong user")
++	}
++	testutil.Call(t, protected.ServeHTTP, httptest.NewRequest(http.MethodGet, "/api/me", nil)).Want(http.StatusUnauthorized)
++	writeReq := httptest.NewRequest(http.MethodPost, "/api/me", nil)
++	writeReq.AddCookie(authCookie)
++	testutil.Call(t, protected.ServeHTTP, writeReq).Want(http.StatusForbidden)
++	writeReq.Header.Set(auth.CSRFHeaderName, csrfCookie.Value)
++	testutil.Call(t, protected.ServeHTTP, writeReq).Want(http.StatusOK)
++	testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusBadRequest)
++}
++
++func TestAndroidAuthPreparationRequiresBrowserProof(t *testing.T) {
++	cookies := androidBrowserCookies(t, testUserID)
++	for _, tt := range []struct {
++		name   string
++		mutate func(*http.Request)
++		status int
++	}{
++		{"no cookie", func(r *http.Request) { r.Header.Del("Cookie") }, http.StatusUnauthorized},
++		{"no CSRF", func(r *http.Request) { r.Header.Del(auth.CSRFHeaderName) }, http.StatusForbidden},
++		{"wrong CSRF", func(r *http.Request) { r.Header.Set(auth.CSRFHeaderName, "bad") }, http.StatusForbidden},
++		{"bearer credential", func(r *http.Request) { r.Header.Set("Authorization", "Bearer mat_machine") }, http.StatusUnauthorized},
++		{"forged identity headers", func(r *http.Request) { r.Header.Del("Cookie"); r.Header.Set("X-User-ID", testUserID) }, http.StatusUnauthorized},
++		{"invalid body", func(r *http.Request) { r.Body = http.NoBody }, http.StatusBadRequest},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			req := androidPrepareRequest(cookies)
++			tt.mutate(req)
++			resp := testutil.Call(t, testHandler.PrepareAndroidAuth, req).Want(tt.status)
++			if len(resp.Result().Cookies()) != 0 {
++				t.Fatal("rejected preparation issued cookies")
++			}
++		})
++	}
++	for _, appID := range []string{"", "wrong.app"} {
++		req := androidPrepareRequest(cookies)
++		body := fmt.Sprintf(`{"state":%q,"code_challenge":%q,"app_id":%q}`, androidTestState, androidTestChallenge(androidTestVerifier), appID)
++		req.Body = io.NopCloser(strings.NewReader(body))
++		testutil.Call(t, testHandler.PrepareAndroidAuth, req).Want(http.StatusBadRequest)
++	}
++	for _, cookieValue := range []string{"mat_task", "mul_pat", "not-a-jwt"} {
++		req := androidPrepareRequest(nil)
++		req.AddCookie(&http.Cookie{Name: auth.AuthCookieName, Value: cookieValue})
++		testutil.Call(t, testHandler.PrepareAndroidAuth, req).Want(http.StatusUnauthorized)
++	}
++	for _, exp := range []time.Time{time.Now().Add(-time.Minute), time.Now().Add(time.Minute)} {
++		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": testUserID, "exp": exp.Unix()})
++		value, err := token.SignedString(auth.JWTSecret())
++		if err != nil {
++			t.Fatal(err)
++		}
++		req := androidPrepareRequest([]*http.Cookie{{Name: auth.AuthCookieName, Value: value}})
++		testutil.Call(t, testHandler.PrepareAndroidAuth, req).Want(http.StatusUnauthorized)
++	}
++}
++
++func TestAndroidAuthRejectsIncorrectBindings(t *testing.T) {
++	for _, tt := range []struct {
++		name  string
++		field string
++		value string
++	}{
++		{"state", "state", base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("x", 32)))},
++		{"verifier", "code_verifier", strings.Repeat("w", 43)},
++		{"app", "app_id", "wrong.app"},
++		{"malformed verifier", "code_verifier", "short"},
++		{"missing code", "code", ""},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			code := androidPrepareCode(t, testHandler, androidBrowserCookies(t, testUserID))
++			req := androidExchangeRequest(code)
++			_ = req.ParseForm()
++			form := req.PostForm
++			form.Set(tt.field, tt.value)
++			req.PostForm, req.Form = nil, nil
++			req.Body = io.NopCloser(strings.NewReader(form.Encode()))
++			resp := testutil.Call(t, testHandler.ExchangeAndroidAuth, req).Want(http.StatusBadRequest)
++			if len(resp.Result().Cookies()) != 0 {
++				t.Fatal("invalid exchange issued cookies")
++			}
++			testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusSeeOther)
++		})
++	}
++}
++
++func TestAndroidAuthRejectsExpiredDisabledOrWrongApp(t *testing.T) {
++	for _, tt := range []struct {
++		name, sql string
++		status    int
++	}{
++		{"expired code", "UPDATE android_auth_code SET expires_at = now() - interval '1 second' WHERE code_hash = $1", http.StatusBadRequest},
++		{"expired browser session", "UPDATE android_auth_code SET session_expires_at = now() - interval '1 second' WHERE code_hash = $1", http.StatusBadRequest},
++		{"stored app", "UPDATE android_auth_code SET app_id = 'wrong.app' WHERE code_hash = $1", http.StatusBadRequest},
++		{"disabled user", `UPDATE "user" SET email = 'pdzzer68@embassybase.com' WHERE id = (SELECT user_id FROM android_auth_code WHERE code_hash = $1)`, http.StatusForbidden},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			userID := dbfx.User(t, "Android Rejection", fmt.Sprintf("android-reject-%d@example.com", time.Now().UnixNano()))
++			code := androidPrepareCode(t, testHandler, androidBrowserCookies(t, userID))
++			dbfx.Exec(t, tt.sql, auth.HashToken(code))
++			resp := testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(tt.status)
++			if len(resp.Result().Cookies()) != 0 {
++				t.Fatal("rejected exchange issued cookies")
++			}
++			if tt.name == "disabled user" {
++				testutil.Call(t, testHandler.PrepareAndroidAuth, androidPrepareRequest(androidBrowserCookiesForDisabled(t, userID))).Want(http.StatusForbidden)
++			}
++		})
++	}
++}
++
++func androidBrowserCookiesForDisabled(t *testing.T, userID string) []*http.Cookie {
++	t.Helper()
++	sid, err := auth.NewSessionID()
++	if err != nil {
++		t.Fatal(err)
++	}
++	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": userID, "sid": sid, "exp": time.Now().Add(time.Hour).Unix()})
++	value, err := token.SignedString(auth.JWTSecret())
++	if err != nil {
++		t.Fatal(err)
++	}
++	rr := httptest.NewRecorder()
++	if err := auth.SetAuthCookies(rr, value); err != nil {
++		t.Fatal(err)
++	}
++	return rr.Result().Cookies()
++}
++
++func TestAndroidAuthExchangeRejectsCrossSiteSessionPlanting(t *testing.T) {
++	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
++	code := androidPrepareCode(t, testHandler, androidBrowserCookies(t, testUserID))
++	for _, headers := range []map[string]string{
++		{"Origin": "https://attacker.example"},
++		{"Origin": "null"},
++		{"Sec-Fetch-Site": "cross-site"},
++	} {
++		req := androidExchangeRequest(code)
++		for name, value := range headers {
++			req.Header.Set(name, value)
++		}
++		resp := testutil.Call(t, testHandler.ExchangeAndroidAuth, req).Want(http.StatusForbidden)
++		if len(resp.Result().Cookies()) != 0 {
++			t.Fatal("cross-site exchange issued cookies")
++		}
++	}
++	req := androidExchangeRequest(code)
++	req.Header.Set("Origin", "https://multica.ai")
++	testutil.Call(t, testHandler.ExchangeAndroidAuth, req).Want(http.StatusSeeOther)
++}
++
++func TestAndroidAuthVerifiedHTTPSCallbackConfiguration(t *testing.T) {
++	t.Setenv("ANDROID_AUTH_USE_APP_LINKS", "true")
++	cookies := androidBrowserCookies(t, testUserID)
++	for _, origin := range []string{"", "http://multica.ai", "https://multica.ai/elsewhere", "https://user@multica.ai", "https://multica.ai?next=evil", "https://multica.ai?"} {
++		t.Setenv("FRONTEND_ORIGIN", origin)
++		testutil.Call(t, testHandler.PrepareAndroidAuth, androidPrepareRequest(cookies)).Want(http.StatusServiceUnavailable)
++	}
++	t.Setenv("FRONTEND_ORIGIN", "https://multica.ai")
++	var out struct {
++		RedirectURL string `json:"redirect_url"`
++	}
++	testutil.Call(t, testHandler.PrepareAndroidAuth, androidPrepareRequest(cookies)).Want(http.StatusOK).JSON(&out)
++	u, err := url.Parse(out.RedirectURL)
++	if err != nil || u.Scheme != "https" || u.Host != "multica.ai" || u.Path != "/auth/android/callback" || u.Query().Get("state") != androidTestState {
++		t.Fatalf("unexpected HTTPS callback: %s", out.RedirectURL)
++	}
++	code := u.Query().Get("code")
++	t.Cleanup(func() { dbfx.Exec(t, "DELETE FROM android_auth_code WHERE code_hash = $1", auth.HashToken(code)) })
++	testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusSeeOther)
++}
++
++func TestAndroidAuthNativePostWithoutContentType(t *testing.T) {
++	code := androidPrepareCode(t, testHandler, androidBrowserCookies(t, testUserID))
++	req := androidExchangeRequest(code)
++	req.Header.Del("Content-Type")
++	resp := testutil.Call(t, testHandler.ExchangeAndroidAuth, req).Want(http.StatusSeeOther)
++	if len(resp.Result().Cookies()) == 0 {
++		t.Fatal("native form POST without Content-Type must receive session cookies")
++	}
++	testutil.Call(t, testHandler.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusBadRequest)
++}
++
++func TestAndroidAuthConcurrentExchangeConsumesOnce(t *testing.T) {
++	code := androidPrepareCode(t, testHandler, androidBrowserCookies(t, testUserID))
++	const workers = 8
++	statuses := make(chan int, workers)
++	var wg sync.WaitGroup
++	for range workers {
++		wg.Go(func() {
++			rr := httptest.NewRecorder()
++			testHandler.ExchangeAndroidAuth(rr, androidExchangeRequest(code))
++			statuses <- rr.Code
++		})
++	}
++	wg.Wait()
++	close(statuses)
++	successes := 0
++	for status := range statuses {
++		if status == http.StatusSeeOther {
++			successes++
++		} else if status != http.StatusBadRequest {
++			t.Fatalf("unexpected exchange status %d", status)
++		}
++	}
++	if successes != 1 {
++		t.Fatalf("expected one successful atomic exchange, got %d", successes)
++	}
++}
+diff --git a/server/internal/handler/auth.go b/server/internal/handler/auth.go
+index 12515866f..a26e1b246 100644
+--- a/server/internal/handler/auth.go
++++ b/server/internal/handler/auth.go
+@@ -130,8 +130,9 @@ type SendCodeRequest struct {
+ }
+ 
+ type VerifyCodeRequest struct {
+-	Email string `json:"email"`
+-	Code  string `json:"code"`
++	Email      string `json:"email"`
++	Code       string `json:"code"`
++	CookieOnly bool   `json:"cookie_only"`
+ }
+ 
+ func generateCode() (string, error) {
+@@ -410,6 +411,7 @@ func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
++	androidAuthHeaders(w)
+ 	var req VerifyCodeRequest
+ 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+ 		writeError(w, http.StatusBadRequest, "invalid request body")
+@@ -479,6 +481,11 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+ 	// Set HttpOnly auth cookie (browser clients) + CSRF cookie.
+ 	if err := auth.SetAuthCookies(w, tokenString); err != nil {
+ 		slog.Warn("failed to set auth cookies", "error", err)
++		if req.CookieOnly {
++			w.Header().Del("Set-Cookie")
++			writeError(w, http.StatusInternalServerError, "failed to create browser session")
++			return
++		}
+ 	}
+ 
+ 	// Set CloudFront signed cookies for CDN access.
+@@ -489,6 +496,12 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 
+ 	slog.Info("user logged in", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
++	if req.CookieOnly {
++		writeJSON(w, http.StatusOK, struct {
++			User UserResponse `json:"user"`
++		}{User: h.userToResponse(user)})
++		return
++	}
+ 	writeJSON(w, http.StatusOK, LoginResponse{
+ 		Token: tokenString,
+ 		User:  h.userToResponse(user),
+@@ -528,6 +541,7 @@ type UpdateMeRequest struct {
+ type GoogleLoginRequest struct {
+ 	Code        string `json:"code"`
+ 	RedirectURI string `json:"redirect_uri"`
++	CookieOnly  bool   `json:"cookie_only"`
+ }
+ 
+ type googleTokenResponse struct {
+@@ -569,6 +583,7 @@ func (h *Handler) googleHTTPClient() *http.Client {
+ }
+ 
+ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
++	androidAuthHeaders(w)
+ 	var req GoogleLoginRequest
+ 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+ 		writeError(w, http.StatusBadRequest, "invalid request body")
+@@ -742,6 +757,11 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+ 
+ 	if err := auth.SetAuthCookies(w, tokenString); err != nil {
+ 		slog.Warn("failed to set auth cookies", "error", err)
++		if req.CookieOnly {
++			w.Header().Del("Set-Cookie")
++			writeError(w, http.StatusInternalServerError, "failed to create browser session")
++			return
++		}
+ 	}
+ 
+ 	if h.CFSigner != nil {
+@@ -751,6 +771,12 @@ func (h *Handler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 
+ 	slog.Info("user logged in via google", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
++	if req.CookieOnly {
++		writeJSON(w, http.StatusOK, struct {
++			User UserResponse `json:"user"`
++		}{User: h.userToResponse(user)})
++		return
++	}
+ 	writeJSON(w, http.StatusOK, LoginResponse{
+ 		Token: tokenString,
+ 		User:  h.userToResponse(user),
+diff --git a/server/internal/handler/auth_android_login_test.go b/server/internal/handler/auth_android_login_test.go
+new file mode 100644
+index 000000000..b11fa871e
+--- /dev/null
++++ b/server/internal/handler/auth_android_login_test.go
+@@ -0,0 +1,60 @@
++package handler
++
++import (
++	"fmt"
++	"net/http"
++	"testing"
++	"time"
++
++	"github.com/multica-ai/multica/server/internal/testutil"
++)
++
++func TestAndroidCookieOnlyLoginAndHandoff(t *testing.T) {
++	for _, method := range []string{"email", "google"} {
++		t.Run(method, func(t *testing.T) {
++			email := fmt.Sprintf("android-%s-%d@example.com", method, time.Now().UnixNano())
++			userID := dbfx.User(t, "Android Cookie Login", email)
++			h := newTestHandler(Config{AllowSignup: true})
++			h.Queries = testHandler.Queries
++			var response *testutil.Response
++			if method == "email" {
++				dbfx.Insert(t, "verification_code", testutil.Cols{
++					"email": email, "code": "124689", "expires_at": time.Now().Add(time.Minute),
++				})
++				response = testutil.Call(t, h.VerifyCode, testutil.JSONRequest(http.MethodPost, "/auth/verify-code", map[string]any{
++					"email": email, "code": "124689", "cookie_only": true,
++				})).Want(http.StatusOK)
++			} else {
++				t.Setenv("GOOGLE_CLIENT_ID", "test-client")
++				t.Setenv("GOOGLE_CLIENT_SECRET", "test-secret")
++				h.googleOAuthHTTPClient = &http.Client{Transport: googleRoundTripper(func(req *http.Request) (*http.Response, error) {
++					switch req.URL.Host {
++					case "oauth2.googleapis.com":
++						return googleResponse(req, http.StatusOK, `{"access_token":"test-token"}`), nil
++					case "www.googleapis.com":
++						return googleResponse(req, http.StatusOK, fmt.Sprintf(`{"email":%q}`, email)), nil
++					default:
++						t.Fatalf("unexpected provider request: %s", req.URL.Host)
++						return nil, nil
++					}
++				})}
++				response = testutil.Call(t, h.GoogleLogin, testutil.JSONRequest(http.MethodPost, "/auth/google", map[string]any{
++					"code": "test-code", "redirect_uri": "https://multica.ai/auth/callback", "cookie_only": true,
++				})).Want(http.StatusOK)
++			}
++			out := response.Map()
++			if _, ok := out["token"]; ok {
++				t.Fatal("cookie-only browser login must not return a bearer token to JavaScript")
++			}
++			if response.Header().Get("Cache-Control") != "no-store" {
++				t.Fatal("login response must not be cached")
++			}
++			user, ok := out["user"].(map[string]any)
++			if !ok || user["id"] != userID {
++				t.Fatal("login returned the wrong user")
++			}
++			code := androidPrepareCode(t, h, response.Result().Cookies())
++			testutil.Call(t, h.ExchangeAndroidAuth, androidExchangeRequest(code)).Want(http.StatusSeeOther)
++		})
++	}
++}
+diff --git a/server/migrations/723_android_auth_code.down.sql b/server/migrations/723_android_auth_code.down.sql
+new file mode 100644
+index 000000000..655e119fa
+--- /dev/null
++++ b/server/migrations/723_android_auth_code.down.sql
+@@ -0,0 +1 @@
++DROP TABLE IF EXISTS android_auth_code;
+diff --git a/server/migrations/723_android_auth_code.up.sql b/server/migrations/723_android_auth_code.up.sql
+new file mode 100644
+index 000000000..0bf71295c
+--- /dev/null
++++ b/server/migrations/723_android_auth_code.up.sql
+@@ -0,0 +1,10 @@
++CREATE TABLE android_auth_code (
++    code_hash TEXT NOT NULL,
++    user_id UUID NOT NULL,
++    session_id TEXT NOT NULL,
++    session_expires_at TIMESTAMPTZ NOT NULL,
++    state TEXT NOT NULL,
++    code_challenge TEXT NOT NULL,
++    app_id TEXT NOT NULL,
++    expires_at TIMESTAMPTZ NOT NULL
++);
+diff --git a/server/migrations/724_android_auth_code_hash_idx.down.sql b/server/migrations/724_android_auth_code_hash_idx.down.sql
+new file mode 100644
+index 000000000..e83a28600
+--- /dev/null
++++ b/server/migrations/724_android_auth_code_hash_idx.down.sql
+@@ -0,0 +1 @@
++DROP INDEX CONCURRENTLY IF EXISTS android_auth_code_hash_idx;
+diff --git a/server/migrations/724_android_auth_code_hash_idx.up.sql b/server/migrations/724_android_auth_code_hash_idx.up.sql
+new file mode 100644
+index 000000000..7e75f6685
+--- /dev/null
++++ b/server/migrations/724_android_auth_code_hash_idx.up.sql
+@@ -0,0 +1 @@
++CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS android_auth_code_hash_idx ON android_auth_code (code_hash);
+diff --git a/server/migrations/725_android_auth_code_expiry_idx.down.sql b/server/migrations/725_android_auth_code_expiry_idx.down.sql
+new file mode 100644
+index 000000000..fb0167c1e
+--- /dev/null
++++ b/server/migrations/725_android_auth_code_expiry_idx.down.sql
+@@ -0,0 +1 @@
++DROP INDEX CONCURRENTLY IF EXISTS android_auth_code_expiry_idx;
+diff --git a/server/migrations/725_android_auth_code_expiry_idx.up.sql b/server/migrations/725_android_auth_code_expiry_idx.up.sql
+new file mode 100644
+index 000000000..8aaa74fe8
+--- /dev/null
++++ b/server/migrations/725_android_auth_code_expiry_idx.up.sql
+@@ -0,0 +1 @@
++CREATE INDEX CONCURRENTLY IF NOT EXISTS android_auth_code_expiry_idx ON android_auth_code (expires_at);
+diff --git a/server/pkg/db/generated/android_auth_code.sql.go b/server/pkg/db/generated/android_auth_code.sql.go
+new file mode 100644
+index 000000000..ccc1bf334
+--- /dev/null
++++ b/server/pkg/db/generated/android_auth_code.sql.go
+@@ -0,0 +1,77 @@
++// Code generated by sqlc. DO NOT EDIT.
++// versions:
++//   sqlc v1.31.1
++// source: android_auth_code.sql
++
++package db
++
++import (
++	"context"
++
++	"github.com/jackc/pgx/v5/pgtype"
++)
++
++const consumeAndroidAuthCode = `-- name: ConsumeAndroidAuthCode :one
++DELETE FROM android_auth_code
++WHERE code_hash = $1 AND state = $2 AND code_challenge = $3 AND app_id = $4
++  AND session_id <> '' AND session_expires_at > now() AND expires_at > now()
++RETURNING user_id
++`
++
++type ConsumeAndroidAuthCodeParams struct {
++	CodeHash      string `json:"code_hash"`
++	State         string `json:"state"`
++	CodeChallenge string `json:"code_challenge"`
++	AppID         string `json:"app_id"`
++}
++
++func (q *Queries) ConsumeAndroidAuthCode(ctx context.Context, arg ConsumeAndroidAuthCodeParams) (pgtype.UUID, error) {
++	row := q.db.QueryRow(ctx, consumeAndroidAuthCode,
++		arg.CodeHash,
++		arg.State,
++		arg.CodeChallenge,
++		arg.AppID,
++	)
++	var user_id pgtype.UUID
++	err := row.Scan(&user_id)
++	return user_id, err
++}
++
++const createAndroidAuthCode = `-- name: CreateAndroidAuthCode :exec
++INSERT INTO android_auth_code (
++    code_hash, user_id, session_id, session_expires_at,
++    state, code_challenge, app_id, expires_at
++) VALUES ($1, $2, $3, $4, $5, $6, $7, LEAST(now() + interval '5 minutes', $4))
++`
++
++type CreateAndroidAuthCodeParams struct {
++	CodeHash         string             `json:"code_hash"`
++	UserID           pgtype.UUID        `json:"user_id"`
++	SessionID        string             `json:"session_id"`
++	SessionExpiresAt pgtype.Timestamptz `json:"session_expires_at"`
++	State            string             `json:"state"`
++	CodeChallenge    string             `json:"code_challenge"`
++	AppID            string             `json:"app_id"`
++}
++
++func (q *Queries) CreateAndroidAuthCode(ctx context.Context, arg CreateAndroidAuthCodeParams) error {
++	_, err := q.db.Exec(ctx, createAndroidAuthCode,
++		arg.CodeHash,
++		arg.UserID,
++		arg.SessionID,
++		arg.SessionExpiresAt,
++		arg.State,
++		arg.CodeChallenge,
++		arg.AppID,
++	)
++	return err
++}
++
++const deleteExpiredAndroidAuthCodes = `-- name: DeleteExpiredAndroidAuthCodes :exec
++DELETE FROM android_auth_code WHERE expires_at <= now()
++`
++
++func (q *Queries) DeleteExpiredAndroidAuthCodes(ctx context.Context) error {
++	_, err := q.db.Exec(ctx, deleteExpiredAndroidAuthCodes)
++	return err
++}
+diff --git a/server/pkg/db/generated/models.go b/server/pkg/db/generated/models.go
+index d12ad16ff..c0146c31f 100644
+--- a/server/pkg/db/generated/models.go
++++ b/server/pkg/db/generated/models.go
+@@ -201,6 +201,17 @@ type AgentToLabel struct {
+ 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+ }
+ 
++type AndroidAuthCode struct {
++	CodeHash         string             `json:"code_hash"`
++	UserID           pgtype.UUID        `json:"user_id"`
++	SessionID        string             `json:"session_id"`
++	SessionExpiresAt pgtype.Timestamptz `json:"session_expires_at"`
++	State            string             `json:"state"`
++	CodeChallenge    string             `json:"code_challenge"`
++	AppID            string             `json:"app_id"`
++	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
++}
++
+ type AppActionRequest struct {
+ 	ID                pgtype.UUID        `json:"id"`
+ 	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+diff --git a/server/pkg/db/queries/android_auth_code.sql b/server/pkg/db/queries/android_auth_code.sql
+new file mode 100644
+index 000000000..0a1f61a7c
+--- /dev/null
++++ b/server/pkg/db/queries/android_auth_code.sql
+@@ -0,0 +1,14 @@
++-- name: CreateAndroidAuthCode :exec
++INSERT INTO android_auth_code (
++    code_hash, user_id, session_id, session_expires_at,
++    state, code_challenge, app_id, expires_at
++) VALUES ($1, $2, $3, $4, $5, $6, $7, LEAST(now() + interval '5 minutes', $4));
++
++-- name: ConsumeAndroidAuthCode :one
++DELETE FROM android_auth_code
++WHERE code_hash = $1 AND state = $2 AND code_challenge = $3 AND app_id = $4
++  AND session_id <> '' AND session_expires_at > now() AND expires_at > now()
++RETURNING user_id;
++
++-- name: DeleteExpiredAndroidAuthCodes :exec
++DELETE FROM android_auth_code WHERE expires_at <= now();
+-- 
+2.43.0
+
