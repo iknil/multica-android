@@ -54,13 +54,14 @@ and rejection; they cannot prove WebView cookie reception.
 - The release APK/package ID and **public SHA-256 signing certificate
   fingerprint** for `ai.multica.android`. The owner keeps the private
   keystore; the debug APK fingerprint is not a production substitute.
-- Deployment access for `multica-ai/multica` Web and API plus its handoff-code
-  store, and domain ownership/access to publish
+- Official maintainers to deploy the `multica-ai/multica` Web and API changes,
+  handoff-code migrations, and domain association at
   `https://multica.ai/.well-known/assetlinks.json` with
   `delegate_permission/common.handle_all_urls` for the release certificate.
-- Google OAuth configuration permission to confirm the existing production
-  `https://multica.ai/auth/callback` redirect and the Android handoff path.
-  No OAuth client secret needs to be shared with this Android worktree.
+- Official maintainers to confirm the existing Google OAuth configuration
+  supports the production `https://multica.ai/auth/callback` redirect. A new
+  Android OAuth client is not required by this browser handoff design, and no
+  OAuth secret needs to be shared with this Android worktree.
 - An authorized ADB device (Android 8–15) with a test account and workspace,
   or an emulator host with an installed system image and working KVM/binder,
   to install the new APK and record login, cookie persistence, directory

@@ -31,9 +31,11 @@ installation, Android runtime interaction, screenshots, email login, Google
 login, file picker, download, or visual result has been observed. A device
 owner must install this APK and run these scenarios independently.
 
-GANY-28 requires Web/API deployment permission, access to the handoff-code
-store and Google OAuth configuration, and the public SHA-256 fingerprint of
-the production signing certificate. The domain owner must publish
+GANY-28 requires official maintainers to deploy the Web/API changes and
+handoff-code migrations, and to confirm the existing Google OAuth configuration
+works with the production browser redirect. The release owner must provide the
+public SHA-256 fingerprint of the production signing certificate. The domain
+owner must publish
 `/.well-known/assetlinks.json` for `ai.multica.android` and that fingerprint.
 The release keystore stays with its owner. An authorized Android 8–15 device
 with a test account and workspace, or a working emulator host, is needed for

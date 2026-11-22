@@ -24,9 +24,11 @@ of a route does not prove that its interactions work on a device.
 
 The Android callback now creates a state and PKCE challenge, opens the system
 browser, validates the return, and POSTs the short-lived code from WebView to a
-same-origin exchange URL. The current Web login and backend do not yet support
-the `platform=android` handoff or exchange endpoint. The flow cannot complete
-until GANY-28 implements and deploys the [Android auth contract](android-auth-contract.md).
+same-origin exchange URL. GANY-28 has a Web/API patch for the
+`platform=android` handoff and exchange endpoint; official maintainers must
+deploy it and confirm the existing Google OAuth browser configuration works.
+The flow cannot complete in the official environment until that deployment and
+the [Android auth contract](android-auth-contract.md) are verified.
 Existing `multica://auth/callback?token=...` yields a JWT but cannot safely
 create the current HttpOnly cookie/CSRF session. This client never writes that
 JWT into legacy localStorage.
