@@ -21,6 +21,13 @@ public class UrlPolicyTest {
         assertFalse(UrlPolicy.isAppBlobUrl("blob:https://evil.example/1234"));
     }
 
+    @Test public void onlyGoogleOauthStartsBrowserHandoff() {
+        assertTrue(UrlPolicy.isGoogleOAuthUrl(
+                "https://accounts.google.com/o/oauth2/v2/auth?client_id=test"));
+        assertFalse(UrlPolicy.isGoogleOAuthUrl("https://accounts.google.com.evil.test/o/oauth2/v2/auth"));
+        assertFalse(UrlPolicy.isGoogleOAuthUrl("https://accounts.google.com/ServiceLogin"));
+    }
+
     @Test public void externalDownloadsMustUseHttps() {
         assertTrue(UrlPolicy.isWebUrl("https://storage.example.com/file.pdf"));
         assertFalse(UrlPolicy.isWebUrl("http://storage.example.com/file.pdf"));

@@ -4,12 +4,15 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,6 +33,13 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
+
 /** Hosts the production web application while supplying Android navigation and file handling. */
 public final class MainActivity extends Activity {
     private static final int FILE_REQUEST = 41;
@@ -42,12 +52,14 @@ public final class MainActivity extends Activity {
     private TextView title;
     private View errorView;
     private DownloadBridge downloadBridge;
+    private ThemeFolderBridge themeFolderBridge;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         buildLayout();
         configureWebView();
+        if (handleAuthCallback(getIntent())) return;
         if (state != null) {
             webView.restoreState(state);
             updateNavigation();
@@ -144,6 +156,8 @@ public final class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         downloadBridge = new DownloadBridge(this, webView);
         webView.addJavascriptInterface(downloadBridge, "MulticaDownloads");
+        themeFolderBridge = new ThemeFolderBridge(this, webView);
+        webView.addJavascriptInterface(themeFolderBridge, "MulticaThemeFolders");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -156,6 +170,7 @@ public final class MainActivity extends Activity {
 
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 downloadBridge.setTrustedPage(false);
+                themeFolderBridge.invalidate();
                 hideError();
                 updateNavigation();
             }
@@ -163,7 +178,10 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 updateNavigation();
                 CookieManager.getInstance().flush();
-                if (UrlPolicy.isAppUrl(url)) downloadBridge.installCaptureScript();
+                if (UrlPolicy.isAppUrl(url)) {
+                    downloadBridge.installCaptureScript();
+                    themeFolderBridge.installScript();
+                }
             }
 
             @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
@@ -258,12 +276,88 @@ public final class MainActivity extends Activity {
     }
 
     private boolean route(String url) {
+        if (AuthCallbackPolicy.isCallback(url)) return handleAuthCallbackUrl(url);
         if (UrlPolicy.isAppUrl(url)) return false;
+        if (UrlPolicy.isGoogleOAuthUrl(url)) {
+            beginAndroidLogin();
+            return true;
+        }
         if (UrlPolicy.isWebUrl(url) || UrlPolicy.isExternalIntentUrl(url)) {
             openExternal(url);
         } else {
             Toast.makeText(this, "Link cannot be opened", Toast.LENGTH_SHORT).show();
         }
+        return true;
+    }
+
+    private SharedPreferences handoffPreferences() {
+        return getSharedPreferences("android_auth_handoff", MODE_PRIVATE);
+    }
+
+    private void beginAndroidLogin() {
+        byte[] nonce = new byte[32];
+        new SecureRandom().nextBytes(nonce);
+        String state = Base64.encodeToString(nonce, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        byte[] secret = new byte[32];
+        new SecureRandom().nextBytes(secret);
+        String verifier = Base64.encodeToString(secret,
+                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        String challenge;
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(verifier.getBytes(StandardCharsets.US_ASCII));
+            challenge = Base64.encodeToString(digest,
+                    Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+        handoffPreferences().edit().putString("state", state)
+                .putString("verifier", verifier)
+                .putLong("created_at", System.currentTimeMillis()).apply();
+        String url = "https://multica.ai/login?platform=android&android_state=" + state
+                + "&android_challenge=" + challenge;
+        Intent browser = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+        browser.addCategory(Intent.CATEGORY_BROWSABLE);
+        List<Intent> choices = new ArrayList<>();
+        for (ResolveInfo target : getPackageManager().queryIntentActivities(browser, 0)) {
+            if (target.activityInfo == null || getPackageName().equals(target.activityInfo.packageName))
+                continue;
+            choices.add(new Intent(browser).setClassName(target.activityInfo.packageName,
+                    target.activityInfo.name));
+        }
+        if (choices.isEmpty()) {
+            Toast.makeText(this, "No browser available for sign-in", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent chooser = Intent.createChooser(choices.remove(0), "Continue sign-in in browser");
+        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, choices.toArray(new Intent[0]));
+        try {
+            startActivity(chooser);
+        } catch (android.content.ActivityNotFoundException exception) {
+            Toast.makeText(this, "No browser available for sign-in", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private boolean handleAuthCallback(Intent intent) {
+        Uri uri = intent == null ? null : intent.getData();
+        return uri != null && AuthCallbackPolicy.isCallback(uri.toString())
+                && handleAuthCallbackUrl(uri.toString());
+    }
+
+    private boolean handleAuthCallbackUrl(String url) {
+        SharedPreferences prefs = handoffPreferences();
+        String state = prefs.getString("state", null);
+        String verifier = prefs.getString("verifier", null);
+        String code = AuthCallbackPolicy.code(url, state, prefs.getLong("created_at", 0),
+                System.currentTimeMillis());
+        if (code == null || verifier == null || !verifier.matches("[A-Za-z0-9_-]{43,128}")) {
+            Toast.makeText(this, "Sign-in callback expired or invalid", Toast.LENGTH_SHORT).show();
+            if (webView.getUrl() == null) webView.loadUrl(UrlPolicy.HOME);
+            return true;
+        }
+        prefs.edit().remove("state").remove("verifier").remove("created_at").apply();
+        String body = "code=" + code + "&state=" + state + "&code_verifier=" + verifier;
+        webView.postUrl(AuthCallbackPolicy.EXCHANGE_URL, body.getBytes(StandardCharsets.UTF_8));
         return true;
     }
 
@@ -377,6 +471,7 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         if (intent != null && intent.getData() != null) {
+            if (handleAuthCallback(intent)) return;
             String url = intent.getData().toString();
             if (UrlPolicy.isAppUrl(url)) webView.loadUrl(url);
         }
@@ -388,6 +483,10 @@ public final class MainActivity extends Activity {
             fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
             fileCallback = null;
         }
+        if (requestCode == ThemeFolderBridge.REQUEST_CODE) {
+            themeFolderBridge.onTreePicked(resultCode == RESULT_OK && data != null
+                    ? data.getData() : null);
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -397,6 +496,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (fileCallback != null) fileCallback.onReceiveValue(null);
+        themeFolderBridge.destroy();
         page.removeView(webView);
         webView.destroy();
         super.onDestroy();

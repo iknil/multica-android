@@ -5,6 +5,7 @@
   const bridge = window.MulticaDownloads;
   const inProgress = new Set();
   const revoke = URL.revokeObjectURL.bind(URL);
+  const click = HTMLAnchorElement.prototype.click;
 
   URL.revokeObjectURL = (url) => {
     if (!inProgress.has(url)) revoke(url);
@@ -34,6 +35,17 @@
       }
     })();
     return true;
+  };
+
+  // Programmatic clicks on detached anchors never reach document listeners.
+  // The web app uses this form for CSV and theme exports.
+  HTMLAnchorElement.prototype.click = function () {
+    if (this.hasAttribute("download") &&
+        (this.href.startsWith("blob:") || this.href.startsWith("data:"))) {
+      window.__multicaDownloadSave(this.href, this.download);
+      return;
+    }
+    return click.call(this);
   };
 
   document.addEventListener("click", (event) => {

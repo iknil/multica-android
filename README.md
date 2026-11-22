@@ -5,6 +5,8 @@ An installable Android client for the Multica web application. The app opens
 features come from the production web deployment. Android code handles app
 links, back/forward navigation, file selection, HTTPS downloads, external
 links, generated exports and connection errors.
+The theme folder import opens Android's directory picker and forwards a ZIP
+to the web theme importer.
 
 ## Build and install
 
@@ -23,8 +25,10 @@ an APK built on another machine can require uninstalling the old copy first.
 The app needs a network connection and a running Multica web deployment.
 Google sign-in in an embedded WebView can be rejected by the identity provider;
 the **Open in browser** menu item opens the current page in the device browser.
-That browser session cannot yet return to the WebView cookie session; the
-required server exchange is described in the coverage document.
+Android now prepares a state and PKCE challenge for browser sign-in and accepts
+an app callback, but the Web/backend exchange is not deployed yet. The exact
+contract and production dependencies are in
+[Android auth contract](docs/android-auth-contract.md).
 
 See [Web feature coverage](docs/web-feature-coverage.md) and
 [verification record](docs/verification.md) for the scope and checks.

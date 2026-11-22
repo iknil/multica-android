@@ -49,4 +49,16 @@ final class UrlPolicy {
     static boolean isAppBlobUrl(String value) {
         return value != null && value.startsWith("blob:") && isAppUrl(value.substring(5));
     }
+
+    static boolean isGoogleOAuthUrl(String value) {
+        if (!isWebUrl(value)) return false;
+        try {
+            URI uri = parse(value);
+            return "accounts.google.com".equalsIgnoreCase(uri.getHost())
+                    && uri.getPort() == -1 && uri.getPath() != null
+                    && uri.getPath().startsWith("/o/oauth2/");
+        } catch (URISyntaxException exception) {
+            return false;
+        }
+    }
 }

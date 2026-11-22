@@ -13,6 +13,8 @@ let capture;
 
 class FakeElement {
   closest() { return this; }
+  hasAttribute(name) { return name === "download"; }
+  click() {}
   href = "blob:https://multica.ai/test-export";
   download = "issues.csv";
 }
@@ -46,6 +48,7 @@ const context = {
     capture = callback;
   } },
   Element: FakeElement,
+  HTMLAnchorElement: FakeElement,
   URL: { revokeObjectURL() { revoked = true; } },
   fetch: async () => ({ blob: async () => source }),
   Uint8Array,
