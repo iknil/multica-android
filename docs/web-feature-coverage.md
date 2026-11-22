@@ -1,33 +1,45 @@
 # Web feature coverage
 
-Compared against the local `multica-ai/multica` source snapshot at commit
-`9cb59baec` (November 14, 2026), especially `apps/web/app` routes. This client
-renders the deployed web app; it does not reimplement those screens. A route
-listed as available still requires an authenticated account, suitable workspace
-permissions, and a successful browser interaction.
+Compared with the local `multica-ai/multica` web source at `9cb59baec`
+(November 14, 2026). The Android client hosts the deployed web app; availability
+of a route does not prove that its interactions work on a device.
 
-| Web route or capability | Android path | Verification |
+| Web capability | Android implementation | Evidence and remaining check |
 | --- | --- | --- |
-| Login, invitations, onboarding, workspace creation | Same web pages in WebView | Route mapping inspected; live login untested |
-| Issues, issue detail, deliverables, my issues, saved views | Same web pages in WebView | Route mapping inspected; live flows untested |
-| Chat and inbox | Same web pages in WebView | Route mapping inspected; live flows untested |
-| Projects, agents, squads, skills, autopilots | Same web pages in WebView | Route mapping inspected; live flows untested |
-| Runtimes, usage, billing, settings, members | Same web pages in WebView | Route mapping inspected; live flows untested |
-| Attachments | Android document picker via WebChromeClient; HTTPS downloads via DownloadManager | Build and lint passed; device flow untested |
-| Workspace and issue links | `https://multica.ai/...` opens the same route in WebView | URL policy unit tests passed; device intent untested |
-| Back, forward, reload, home, browser escape | Native toolbar/menu | Build and lint passed; device interaction untested |
+| Login, invitations, onboarding, workspace creation | Production pages in WebView | Route mapping inspected; live sign-in blocked on device access; Google sign-in needs server session exchange |
+| Issues, issue detail, deliverables, my issues, saved views | Production pages in WebView | Route mapping inspected; authenticated flows need device QA |
+| Chat and inbox | Production pages in WebView | Route mapping inspected; authenticated flows need device QA |
+| Projects, agents, squads, skills, autopilots | Production pages in WebView | Route mapping inspected; authenticated flows need device QA; theme directory import still unsupported |
+| Runtimes, usage, billing, settings, members | Production pages in WebView | Route mapping inspected; authenticated flows need device QA |
+| File uploads | Android document picker through WebChromeClient | Build/lint only; device picker and upload need QA |
+| HTTPS attachments | DownloadManager with WebView cookies | Code inspection; download and access need device QA |
+| Blob/data exports | Click capture, WebView fallback, chunked Android write | JavaScript test covers immediate blob URL revocation; device export needs QA. Android 10+ saves to public Downloads; Android 8–9 saves to app external files |
+| Same-origin links | `https://multica.ai` remains in WebView | URL policy tests; App Links association needs production `assetlinks.json` and device check |
+| External links and new windows | User-gesture popup URL opens browser or main WebView | Code inspection; `window.open` and `target=_blank` need device QA |
+| Back, forward, reload, home, retry | Native toolbar and WebView history callback | Code inspection; SPA history and cold-start offline retry need device QA |
+| Android 15 system bars | Root view applies system-bar insets | Build/lint only; visual device QA needed |
 
-## Known gaps
+## Google sign-in dependency
 
-- Google OAuth can reject embedded WebView user agents. The browser menu gives
-  access to the full web login, but its browser session is separate from the
-  WebView session. An Android native OAuth handoff needs a server-supported
-  cookie/session exchange to keep the user signed in inside the app.
-- System push notifications, share targets, offline content and background
-  uploads are not implemented. They are outside the web route surface.
-- No Android device or emulator was connected during this build, so no end to
-  end interaction or visual layout was verified. Independent QA should test
-  each web route and attachment flow on a device.
-- Downloads are stored in the app's external files Downloads directory and
-  shown through Android's download notification and Downloads screen. Some
-  device file managers may not show the app directory by default.
+The web login uses an HttpOnly cookie and CSRF token. Android and the web
+backend need a one-time browser-to-app exchange: browser OAuth completes in the
+system browser, the backend issues a short-lived single-use code bound to this
+app's redirect, and the app passes the code to a same-origin WebView endpoint
+which sets the normal HttpOnly cookie and CSRF state. The backend must consume
+the code atomically and reject replay/expiry. The app then loads the signed-in
+web route. Existing `multica://auth/callback?token=...` yields a JWT but no
+server endpoint can exchange it for the current cookie session; writing it into
+legacy localStorage would revive a known XSS exposure. This integration needs
+backend implementation and deployed HTTPS App Links verification before QA can
+close Google sign-in.
+
+## Other uncovered items
+
+- No device or emulator was available for installation, layout, authenticated
+  journeys, downloads, and OAuth return. The build is installable but those
+  flows remain unverified.
+- Production `https://multica.ai/.well-known/assetlinks.json` must bind the
+  production signing certificate and package; the local debug certificate does
+  not establish production App Links ownership.
+- Theme directory import, push notifications, share targets, offline content,
+  and background uploads have no Android implementation in this release.

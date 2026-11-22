@@ -5,12 +5,15 @@ import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.WebChromeClient;
@@ -38,6 +41,7 @@ public final class MainActivity extends Activity {
     private TextView forwardButton;
     private TextView title;
     private View errorView;
+    private DownloadBridge downloadBridge;
     private android.webkit.ValueCallback<Uri[]> fileCallback;
 
     @Override public void onCreate(Bundle state) {
@@ -78,6 +82,17 @@ public final class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.WHITE);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (Build.VERSION.SDK_INT >= 30) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                return new WindowInsets.Builder(insets)
+                        .setInsets(WindowInsets.Type.systemBars(), Insets.NONE).build();
+            }
+            view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets.replaceSystemWindowInsets(0, 0, 0, 0);
+        });
 
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
@@ -122,11 +137,13 @@ public final class MainActivity extends Activity {
         settings.setAllowFileAccessFromFileURLs(false);
         settings.setAllowUniversalAccessFromFileURLs(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setSupportMultipleWindows(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setMediaPlaybackRequiresUserGesture(true);
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
+        downloadBridge = new DownloadBridge(this, webView);
+        webView.addJavascriptInterface(downloadBridge, "MulticaDownloads");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -138,6 +155,7 @@ public final class MainActivity extends Activity {
             }
 
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                downloadBridge.setTrustedPage(false);
                 hideError();
                 updateNavigation();
             }
@@ -145,6 +163,12 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView view, String url) {
                 updateNavigation();
                 CookieManager.getInstance().flush();
+                if (UrlPolicy.isAppUrl(url)) downloadBridge.installCaptureScript();
+            }
+
+            @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                updateNavigation();
+                view.post(MainActivity.this::updateNavigation);
             }
 
             @Override public void onReceivedError(WebView view, WebResourceRequest request,
@@ -153,6 +177,58 @@ public final class MainActivity extends Activity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onCreateWindow(WebView source, boolean isDialog,
+                    boolean isUserGesture, android.os.Message resultMsg) {
+                if (!isUserGesture) return false;
+                WebView popup = new WebView(MainActivity.this);
+                popup.setAlpha(0f);
+                page.addView(popup, new FrameLayout.LayoutParams(1, 1));
+                popup.getSettings().setJavaScriptEnabled(false);
+                Runnable closePopup = () -> {
+                    if (popup.getParent() != null) {
+                        page.removeView(popup);
+                        popup.destroy();
+                    }
+                };
+                popup.postDelayed(closePopup, 30_000);
+                popup.setDownloadListener((url, agent, disposition, mime, length) -> {
+                    download(url, agent, disposition, mime);
+                    popup.post(closePopup);
+                });
+                popup.setWebViewClient(new WebViewClient() {
+                    private boolean handled;
+
+                    private void handOff(String url) {
+                        if (handled || url == null || "about:blank".equals(url)) return;
+                        handled = true;
+                        if (UrlPolicy.isAppUrl(url)) webView.loadUrl(url);
+                        else route(url);
+                        popup.post(closePopup);
+                    }
+
+                    @Override public boolean shouldOverrideUrlLoading(WebView view,
+                            WebResourceRequest request) {
+                        handOff(request.getUrl().toString());
+                        return true;
+                    }
+
+                    @Override public void onPageStarted(WebView view, String url,
+                            android.graphics.Bitmap favicon) {
+                        handOff(url);
+                    }
+                });
+                ((WebView.WebViewTransport) resultMsg.obj).setWebView(popup);
+                resultMsg.sendToTarget();
+                return true;
+            }
+
+            @Override public void onCloseWindow(WebView window) {
+                if (window != webView && window.getParent() == page) {
+                    page.removeView(window);
+                    window.destroy();
+                }
+            }
+
             @Override public void onProgressChanged(WebView view, int value) {
                 progress.setProgress(value);
                 progress.setVisibility(value == 100 ? View.INVISIBLE : View.VISIBLE);
@@ -200,6 +276,10 @@ public final class MainActivity extends Activity {
     }
 
     private void download(String url, String userAgent, String disposition, String mimeType) {
+        if (UrlPolicy.isAppBlobUrl(url) || (url != null && url.startsWith("data:"))) {
+            downloadBridge.captureFallback(url, URLUtil.guessFileName(url, disposition, mimeType));
+            return;
+        }
         if (!UrlPolicy.isWebUrl(url)) {
             Toast.makeText(this, "Download requires HTTPS", Toast.LENGTH_SHORT).show();
             return;
@@ -258,12 +338,18 @@ public final class MainActivity extends Activity {
         message.setTextSize(18);
         message.setGravity(Gravity.CENTER);
         error.addView(message);
-        TextView retry = button("Retry", "Retry loading page", v -> webView.reload());
+        TextView retry = button("Retry", "Retry loading page", v -> retryPage());
         retry.setTextSize(16);
         retry.setLayoutParams(new LinearLayout.LayoutParams(dp(120), dp(56)));
         error.addView(retry);
         errorView = error;
         page.addView(error, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void retryPage() {
+        String url = webView.getUrl();
+        if (UrlPolicy.isAppUrl(url)) webView.loadUrl(url);
+        else webView.loadUrl(UrlPolicy.HOME);
     }
 
     private void hideError() {

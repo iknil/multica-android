@@ -12,6 +12,13 @@ public class UrlPolicyTest {
         assertFalse(UrlPolicy.isAppUrl("https://multica.ai:444/login"));
         assertFalse(UrlPolicy.isAppUrl("javascript:alert(1)"));
         assertFalse(UrlPolicy.isAppUrl("file:///etc/passwd"));
+        assertTrue(UrlPolicy.isAppUrl("https://multica.ai/search?q=two words|more"));
+        assertFalse(UrlPolicy.isAppUrl("https://multica.ai\\@evil.example/path"));
+    }
+
+    @Test public void blobExportMustBelongToAppOrigin() {
+        assertTrue(UrlPolicy.isAppBlobUrl("blob:https://multica.ai/1234"));
+        assertFalse(UrlPolicy.isAppBlobUrl("blob:https://evil.example/1234"));
     }
 
     @Test public void externalDownloadsMustUseHttps() {

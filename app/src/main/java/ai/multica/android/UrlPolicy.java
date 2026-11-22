@@ -9,9 +9,16 @@ final class UrlPolicy {
 
     private UrlPolicy() {}
 
+    private static URI parse(String value) throws URISyntaxException {
+        if (value == null || value.isEmpty()) throw new URISyntaxException("", "empty URL");
+        // Browser links can contain these unescaped characters. The host and
+        // scheme still need strict URI parsing so lookalike hosts stay external.
+        return new URI(value.replace(" ", "%20").replace("|", "%7C"));
+    }
+
     static boolean isWebUrl(String value) {
         try {
-            URI uri = new URI(value);
+            URI uri = parse(value);
             return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null;
         } catch (URISyntaxException | NullPointerException exception) {
             return false;
@@ -21,7 +28,7 @@ final class UrlPolicy {
     static boolean isAppUrl(String value) {
         if (!isWebUrl(value)) return false;
         try {
-            URI uri = new URI(value);
+            URI uri = parse(value);
             return "multica.ai".equalsIgnoreCase(uri.getHost()) && uri.getPort() == -1;
         } catch (URISyntaxException exception) {
             return false;
@@ -30,12 +37,16 @@ final class UrlPolicy {
 
     static boolean isExternalIntentUrl(String value) {
         try {
-            URI uri = new URI(value);
+            URI uri = parse(value);
             String scheme = uri.getScheme();
             return "mailto".equalsIgnoreCase(scheme) || "tel".equalsIgnoreCase(scheme)
                     || "sms".equalsIgnoreCase(scheme);
         } catch (URISyntaxException | NullPointerException exception) {
             return false;
         }
+    }
+
+    static boolean isAppBlobUrl(String value) {
+        return value != null && value.startsWith("blob:") && isAppUrl(value.substring(5));
     }
 }
