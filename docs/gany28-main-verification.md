@@ -1,5 +1,7 @@
 # GANY-28 main integration verification
 
+Historical record for the 2026-11-22 main commit. For the current main adaptation, use `gany28-main-20261124-verification.md` and `patches/GANY-28-main-ff7c4a36.patch`.
+
 ## Source and patch
 
 - Upstream repository: `multica-ai/multica`
